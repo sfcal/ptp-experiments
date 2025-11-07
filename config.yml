@@ -102,6 +102,9 @@ kernel_parameters:
   - name: CONFIG_SYSTEM_REVOCATION_KEYS
     value: '""'
 
+#kernel_patches:
+#  - 0044-static-detect.tgpio
+
 # vars file for kernel
 kernel_unarchive_src: "https://cdn.kernel.org/pub/linux/kernel/v{{ kernel_version[:1] }}.x/linux-{{ kernel_version }}.tar.xz"
 kernel_unarchive_creates: "{{ kernel_build_location }}/linux-{{ kernel_version }}"

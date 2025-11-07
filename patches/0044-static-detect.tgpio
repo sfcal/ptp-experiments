@@ -1,0 +1,264 @@
+Switch PMC TGPIO driver to static detection
+
+ Dynamic detection does not seem to work for LattePanda Mu.
+ This change is from Ahmad Byagowi, in Time-Aware-GPIO-
+ Support-main received 2025-10-14.
+Index: linux-kernel-v6.12.47/drivers/ptp/ptp-intel-pmc-tgpio.c
+===================================================================
+--- linux-kernel-v6.12.47.orig/drivers/ptp/ptp-intel-pmc-tgpio.c
++++ linux-kernel-v6.12.47/drivers/ptp/ptp-intel-pmc-tgpio.c
+@@ -16,6 +16,8 @@
+ #include <linux/platform_device.h>
+ #include <linux/ptp_clock_kernel.h>
+ 
++#define _STATIC_DETECT
++
+ #define TGPIOCTL		0x00
+ #define TGPIOCOMPV31_0		0x10
+ #define TGPIOCOMPV63_32		0x14
+@@ -67,7 +69,11 @@ struct intel_pmc_tgpio_t {
+ 
+ 		struct dentry *root;
+ 		struct debugfs_regset32 *regset;
++#ifndef _STATIC_DETECT
+ 		struct platform_device *pdev;
++#else
++		char *name;
++#endif
+ 	} pin[MAX_PINS_PER_PLAT];
+ };
+ 
+@@ -640,8 +646,12 @@ static int ptp_device_register(struct pl
+ 	return 0;
+ }
+ 
+-static const plat_acpi_resource *find_plat_acpi_resource(struct platform_device *pdev,
+-							 int *n_pins)
++static const plat_acpi_resource *find_plat_acpi_resource
++#ifndef _STATIC_DETECT
++(struct platform_device *pdev, int *n_pins)
++#else
++(char *name, int *n_pins)
++#endif	
+ {
+ 	bool found = false;
+ 	unsigned int index;
+@@ -654,7 +664,13 @@ static const plat_acpi_resource *find_pl
+ 
+ 			if (res_name == NULL)
+ 				continue;
+-			if (!strncmp(pdev->name, res_name, strlen(res_name))) {
++#ifndef _STATIC_DETECT
++			if (strncmp(pdev->name, res_name, strlen(res_name))
++			    == 0) {
++#else
++			if (strncmp(name, res_name, strlen(res_name))
++			    == 0) {
++#endif				
+ 				found = true;
+ 				break;
+ 			}
+@@ -677,7 +693,11 @@ static const plat_acpi_resource *find_pl
+ 	return ret;
+ }
+ 
++#ifndef _STATIC_DETECT
+ static int intel_pmc_tgpio_probe(struct platform_device *pdev)
++#else
++static int intel_pmc_tgpio_probe(char *name, struct resource sres)
++#endif
+ {
+ 	struct intel_pmc_tgpio_t *tgpio = intel_pmc_tgpio;
+ 	unsigned int pin_index;
+@@ -692,8 +712,13 @@ static int intel_pmc_tgpio_probe(struct
+ 
+ 	/* Find and cache the list of ACPI resources for this platform */
+ 	if (tgpio->plat_res == NULL) {
++#ifndef _STATIC_DETECT
+ 		tgpio->plat_res = find_plat_acpi_resource
+ 			(pdev, &tgpio->info.n_pins);
++#else
++		tgpio->plat_res = find_plat_acpi_resource
++			(name, &tgpio->info.n_pins);
++#endif
+ 		tgpio->info.n_ext_ts = tgpio->info.n_per_out
+ 			= tgpio->info.n_pins;
+ 	}
+@@ -714,12 +739,24 @@ static int intel_pmc_tgpio_probe(struct
+ 
+ 	tgpio_pin = tgpio->pin+pin_index;
+ 	tgpio_pin_desc = tgpio->info.pin_config+pin_index;
++#ifndef _STATIC_DETECT
+ 	tgpio_pin->pdev = pdev;
+ 	platform_set_drvdata(pdev, tgpio);
++#else
++	tgpio_pin->name = kstrdup(name, GFP_KERNEL);
++#endif
+ 	pin_count = pin_index + 1;
+-
++#ifndef _STATIC_DETECT
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++#else
++	res = &sres;
++#endif
++	
++#ifndef _STATIC_DETECT
+ 	tgpio_pin->base = devm_ioremap_resource(&pdev->dev, res);
++#else
++	tgpio_pin->base = ioremap(res->start, resource_size(res));
++#endif
+ 	if (!tgpio_pin->base) {
+ 		ret = -ENOMEM;
+ 		goto unlock;
+@@ -729,16 +766,25 @@ static int intel_pmc_tgpio_probe(struct
+ 	for (pin_index = 0; pin_index < MAX_PINS_PER_PLAT; ++pin_index) {
+ 		const char *cmpr = (const char *)(*tgpio->plat_res)[pin_index];
+ 
++#ifndef _STATIC_DETECT
+ 		if (strncmp(cmpr, pdev->name, strlen(cmpr)) == 0)
+ 			break;
++#else
++		if (strncmp(cmpr, name, strlen(cmpr)) == 0)
++			break;
++#endif
+ 	}
+ 	if (pin_index == MAX_PINS_PER_PLAT) {
+ 		ret = -ENODEV;
+ 		goto unlock;
+ 	}
+ 
++#ifndef _STATIC_DETECT
+ 	tgpio_pin->regset = devm_kzalloc
+ 		(&pdev->dev, sizeof(*tgpio_pin->regset), GFP_KERNEL);
++#else
++	tgpio_pin->regset = kzalloc(sizeof(*tgpio_pin->regset), GFP_KERNEL);
++#endif
+ 	if (!tgpio_pin->regset) {
+ 		ret = -ENOMEM;
+ 		goto unlock;
+@@ -756,8 +802,13 @@ static int intel_pmc_tgpio_probe(struct
+ 	strncpy(tgpio_pin_desc->name, pinname_tmpl,
+ 		sizeof(tgpio_pin_desc->name));
+ 
+-	if (tgpio->info.n_pins == pin_count)
++	if (tgpio->info.n_pins == pin_count) {
++#ifndef _STATIC_DETECT
+ 		ret = ptp_device_register(pdev);
++#else
++		ret = ptp_device_register(NULL);
++#endif
++	}
+ 
+ unlock:
+ 	mutex_unlock(&tgpio->lock);
+@@ -765,20 +816,40 @@ unlock:
+ 	return ret;
+ }
+ 
+-static void intel_pmc_tgpio_remove(struct platform_device *pdev)
++#ifndef _STATIC_DETECT
++static int intel_pmc_tgpio_remove(struct platform_device *pdev)
++#else
++static int intel_pmc_tgpio_remove(char *name)
++#endif
+ {
++#ifndef _STATIC_DETECT
+ 	struct intel_pmc_tgpio_t *tgpio = platform_get_drvdata(pdev);
++#else
++	struct intel_pmc_tgpio_t	*tgpio = intel_pmc_tgpio;
++#endif
+ 	unsigned int pin_index;
+ 	struct intel_pmc_tgpio_pin *tgpio_pin;
++	int ret = 0;
+ 
+ 	mutex_lock(&tgpio->lock);
+ 
+ 	for (pin_index = 0; pin_index < MAX_PINS_PER_PLAT; ++pin_index) {
+ 		tgpio_pin = tgpio->pin+pin_index;
+-		if (tgpio_pin->pdev == pdev || tgpio_pin->pdev == NULL)
++#ifndef _STATIC_DETECT
++		if (tgpio_pin->pdev == NULL || tgpio_pin->pdev == pdev)
++			break;
++#else
++		if (tgpio_pin->name == NULL ||
++		    strcmp(tgpio_pin->name, name) == 0)
+ 			break;
++#endif
+ 	}
++#ifndef _STATIC_DETECT
+ 	if (pin_index == MAX_PINS_PER_PLAT || tgpio_pin->pdev == NULL) {
++#else
++	if (pin_index == MAX_PINS_PER_PLAT || tgpio_pin->name == NULL) {
++#endif
++		ret = -ENODEV;
+ 		goto unlock;
+ 	}
+ 
+@@ -793,12 +864,19 @@ static void intel_pmc_tgpio_remove(struc
+ 	tgpio_pin->base = NULL;
+ 	debugfs_remove_recursive(tgpio_pin->root);
+ 
++#ifdef _STATIC_DETECT
++	kfree(tgpio_pin->regset);
++	kfree(tgpio_pin->name);
++	iounmap(tgpio_pin->base);
++#endif
++
+ 	mutex_lock(&tgpio->lock);
+ 	tgpio_pin->busy = false;
+ 	complete(&tgpio_pin->transact_comp);
+ 
+ unlock:
+ 	mutex_unlock(&tgpio->lock);
++	return ret;
+ }
+ 
+ static const struct acpi_device_id intel_pmc_acpi_match[] = {
+@@ -815,8 +893,10 @@ MODULE_ALIAS("acpi*:INTC1023:*");
+ MODULE_ALIAS("acpi*:INTC1024:*");
+ 
+ static struct platform_driver intel_pmc_tgpio_driver = {
++#ifndef _STATIC_DETECT
+ 	.probe		= intel_pmc_tgpio_probe,
+ 	.remove		= intel_pmc_tgpio_remove,
++#endif
+ 	.driver		= {
+ 		.name	= DRIVER_NAME,
+ 	},
+@@ -899,14 +979,23 @@ static int intel_pmc_tgpio_init(void)
+ 		intel_pmc_tgpio->pin[iter].base = NULL;
+ 	}
+ 
++#ifndef _STATIC_DETECT
+ 	ret = platform_driver_register(&intel_pmc_tgpio_driver);
+ 	if (ret)
+ 		goto driver_register;
++#else
++	intel_pmc_tgpio_probe("INTC1023", (struct resource)
++			      { .start = 0xFE001210, .end = 0xFE001247 });
++	intel_pmc_tgpio_probe("INTC1024", (struct resource)
++			      { .start = 0xFE001310, .end = 0xFE001347 });
++#endif
+ 
+ 	return 0;
+ 
++#ifndef _STATIC_DETECT
+ driver_register:
+ 	kfree(intel_pmc_tgpio);
++#endif
+ 
+ alloc_tgpio:
+ 	kfree(intel_pmc_tgpio_driver.driver.acpi_match_table);
+@@ -918,7 +1007,12 @@ alloc_acpi_table:
+ static void intel_pmc_tgpio_exit(void)
+ {
+ 	ptp_clock_unregister(intel_pmc_tgpio->clock);
++#ifndef _STATIC_DETECT
+ 	platform_driver_unregister(&intel_pmc_tgpio_driver);
++#else
++	intel_pmc_tgpio_remove("INTC1023");
++	intel_pmc_tgpio_remove("INTC1024");
++#endif
+ 	mutex_destroy(&intel_pmc_tgpio->lock);
+ 	kfree(intel_pmc_tgpio);
+ 	kfree(intel_pmc_tgpio_driver.driver.acpi_match_table);

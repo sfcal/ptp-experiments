@@ -19,6 +19,26 @@
     remote_src: yes
     mode: "0640"
 
+- name: Copy patches to kernel source
+  ansible.builtin.copy:
+    src: "patches/{{ item }}"
+    dest: "{{ kernel_build_location }}/linux-{{ kernel_version }}/{{ item }}"
+    mode: "0644"
+  loop: "{{ kernel_patches }}"
+  when: kernel_patches is defined
+
+- name: Apply kernel patches
+  ansible.builtin.command:
+    cmd: "patch -p1 < {{ item }}"
+    chdir: "{{ kernel_build_location }}/linux-{{ kernel_version }}"
+  loop: "{{ kernel_patches }}"
+  when: kernel_patches is defined
+  register: patch_result
+  failed_when: 
+    - patch_result.rc != 0
+    - "'patch detected!  Skipping patch' not in patch_result.stdout"
+  changed_when: "'patching file' in patch_result.stdout"
+  
 - name: Update config to new kernel version
   ansible.builtin.command:
     cmd: make olddefconfig
