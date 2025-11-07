@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+network:
+  version: 2
+  ethernets:
+    {{ network_interface }}:
+{% if network_static_ip is defined %}
+      dhcp4: false
+      addresses:
+        - {{ network_static_ip }}
+      routes:
+        - to: default
+          via: {{ network_gateway }}
+      nameservers:
+        addresses:
+{% for dns in network_dns_servers %}
+          - {{ dns }}
+{% endfor %}
+{% else %}
+      dhcp4: true
+{% endif %}

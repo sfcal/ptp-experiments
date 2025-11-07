@@ -1,0 +1,32 @@
+---
+- name: Changes IP to static
+  hosts: kernel
+  become: true
+  vars_files:
+    - config.yml
+
+  tasks:
+  - name: Backup existing netplan configuration.
+    ansible.builtin.copy:
+      src: /etc/netplan/50-cloud-init.yaml
+      dest: /etc/netplan/50-cloud-init.yaml.backup
+      remote_src: yes
+      mode: 0600
+    ignore_errors: yes
+
+  - name: Deploy netplan configuration.
+    ansible.builtin.template:
+      src: templates/netplan-static.yaml.j2
+      dest: /etc/netplan/50-cloud-init.yaml
+      owner: root
+      group: root
+      mode: 0600
+    notify: Apply netplan
+
+  - name: Apply netplan configuration immediately.
+    ansible.builtin.command:
+      cmd: netplan apply
+    changed_when: true
+    async: 45
+    poll: 0
+    register: netplan_apply

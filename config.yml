@@ -1,6 +1,13 @@
 ---
 system_timezone: America/New_York
 
+network_interface: "enp1s0"
+network_static_ip: "10.1.30.222/24"
+network_gateway: "10.1.30.1"
+network_dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+
 # GPSd configuration.
 gpsd_state: started
 gpsd_enabled: true
@@ -60,8 +67,8 @@ phc2sys_extra_opts: '-m'
 ## Kernel build for Ubuntu
 # defaults file for kernel
 
-kernel_version: "6.12.56"
-kernel_build_location: /tmp
+kernel_version: "6.12.47"
+kernel_build_location: /opt/kernel-build
 kernel_parameters:
   - name: CONFIG_SMP
     value: y
