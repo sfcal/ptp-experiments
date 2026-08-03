@@ -1,0 +1,21 @@
+---
+# PTP clients (Raspberry Pi): ptp4l disciplines the NIC PHC from the
+# grandmaster, phc2sys steers the system clock from the PHC.
+ptp_role: slave
+
+network_interface: "eth0"
+
+ptp4l_service_state: started
+ptp4l_service_enabled: true
+
+# -w waits for ptp4l to lock and picks up the UTC-TAI offset from it,
+# so no -O here. No --transportSpecific either: it must match ptp4l's
+# transportSpecific (default 0) or the -w management queries hang.
+phc2sys_service_state: started
+phc2sys_service_enabled: true
+phc2sys_source: '/dev/ptp0'
+phc2sys_clock: 'CLOCK_REALTIME'
+phc2sys_extra_opts: '-w -m'
+
+# apt prometheus-node-exporter's textfile collector directory.
+ptp_metrics_textfile_dir: /var/lib/prometheus/node-exporter

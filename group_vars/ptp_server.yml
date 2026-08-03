@@ -1,0 +1,124 @@
+---
+# Grandmaster: GNSS Timecard -> ts2phc -> phc2sys -> ptp4l (masterOnly).
+ptp_role: grandmaster
+
+network_interface: "enp1s0"
+
+# GPSd configuration.
+gpsd_state: started
+gpsd_enabled: true
+gpsd_devices: "/dev/ttyS7"
+gpsd_baud: "115200"
+gpsd_options: "-s {{ gpsd_baud }} -n"
+
+# igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/README.md).
+# Installed on disk only -- loads at the next reboot. Ansible flags
+# /run/reboot-required and never reloads igc live (enp1s0 is the igc NIC).
+igc_ppsfix_enabled: true
+igc_ppsfix_version: "7.0.0-ppsfix.1"  # must match igc-ppsfix/dkms/dkms.conf
+igc_ppsfix_deploy_path: /opt/igc-ppsfix
+igc_ppsfix_auto_reboot: false  # opt-in: let Ansible reboot when a new build is staged
+
+# Timecard SMA routing (ptp_ocp sysfs). Writes don't persist across reboot,
+# so a systemd oneshot (timecard-sma.service) reapplies them at boot.
+# Only keys listed under timecard_sma are written; see
+# /sys/class/timecard/<dev>/available_sma_inputs and available_sma_outputs
+# on the host for the accepted values.
+timecard_device: ocp0
+timecard_sma_wait_timeout: 30  # seconds to wait for the sysfs node at boot
+timecard_sma:
+  sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
+#  sma2: "IN: TS1"     # timestamp incoming signal on SMA2
+
+# Refclock to be used as a time source.
+# See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
+chrony_refclock: |
+  # Uncomment to use Timecard PHC as time source.
+  refclock PHC /dev/ptp2 poll 0 refid AC precision 1e-9 tai prefer
+
+  # Uncomment to use NIC's PHC as time source.
+  # refclock PHC /dev/ptp0 poll 0 dpoll -5 tai  # Use NIC's PHC
+
+  # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
+  refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
+
+  # Uncomment to use GPS module directly as time source.
+  #refclock SHM 0 refid NMEA precision 1e-3 poll 0 filter 3
+
+  # Uncomment to use PPS source (e.g. GPS PPS to GPIO pin 18)
+  #refclock PPS /dev/pps0 refid PPS lock NMEA poll 3 trust
+
+  # Uncomment to log timing statistics.
+  #log tracking measurements statistics
+
+# Hosts allowed to query chrony for NTP time.
+# See: https://chrony-project.org/doc/3.4/chrony.conf.html#allow
+chrony_allow: "10.3.0.0/16"
+
+# NTP upstream servers
+chrony_servers:
+  - ntp1.npl.co.uk
+  - ntp2.npl.co.uk
+  - ntp3.npl.co.uk
+  - ntp4.npl.co.uk
+  - ntp5.npl.co.uk
+  - time.cloudflare.com
+
+chrony_server_options: iburst xleave
+
+# PTP 4 Linux options.
+ptp4l_service_state: started
+ptp4l_service_enabled: true
+
+# How the NIC PHC (/dev/ptp0, served by ptp4l) is synced from the Timecard:
+#   phc2sys - PHC-to-PHC over PCIe reads (works with the stock igc driver).
+#   ts2phc  - Timecard 1PPS -> TimeNIC SDP1 (needs the igc-ppsfix driver
+#             loaded, an SMA cable from Timecard PPS OUT to TimeNIC PPS IN,
+#             and timecard_sma routing "OUT: PHC" on the cabled connector).
+# Exactly one of the two services runs; the other is stopped and disabled.
+nic_sync_method: phc2sys
+
+ts2phc_service_state: "{{ 'started' if nic_sync_method == 'ts2phc' else 'stopped' }}"
+ts2phc_service_enabled: "{{ nic_sync_method == 'ts2phc' }}"
+ts2phc_logging_level: 7
+ts2phc_clock: '/dev/ptp0'  # NIC PHC, disciplined by the Timecard's PPS
+ts2phc_source: 'generic'
+ts2phc_pin_index: 1  # TimeNIC SDP1 = PPS IN
+ts2phc_extra_opts: '-m'
+# ts2phc's generic source aligns second edges only; the unit coarse-sets the
+# NIC PHC from the Timecard first so the absolute (TAI) seconds are right.
+ts2phc_presync_source: '/dev/ptp2'
+ts2phc_presync_timeout: 10
+
+# Discipline the NIC PHC (served by ptp4l) from the Timecard PHC.
+# Do not point phc2sys_clock at CLOCK_REALTIME while chrony is running --
+# chrony already disciplines the system clock from the Timecard refclock.
+phc2sys_service_state: "{{ 'started' if nic_sync_method == 'phc2sys' else 'stopped' }}"
+phc2sys_service_enabled: "{{ nic_sync_method == 'phc2sys' }}"
+phc2sys_clock: '/dev/ptp0'
+phc2sys_source: '/dev/ptp2'
+# Both PHCs hold TAI, so the phc2sys time offset between them is 0.
+# --transportSpecific=1 moved here from the unit template (clients must
+# omit it: it has to match ptp4l's transportSpecific, default 0).
+phc2sys_extra_opts: '--transportSpecific=1 -O 0 -m'
+
+# Monitoring stack (Grafana + Prometheus + exporters) running in Docker.
+monitoring_deploy_path: /opt/monitoring
+monitoring_uid: "1000"
+monitoring_gid: "1000"
+
+# Where ptp-metrics.sh writes node_exporter textfile metrics.
+ptp_metrics_textfile_dir: "{{ monitoring_deploy_path }}/textfile"
+
+grafana_image: "grafana/grafana:13.1.1"
+grafana_port: 3000
+grafana_admin_user: admin
+grafana_admin_password: changeme  # Change me before deploying.
+
+prometheus_image: "prom/prometheus:v3.13.1"
+prometheus_port: 9090
+prometheus_retention: 30d
+
+chrony_exporter_image: "quay.io/superq/chrony-exporter:v0.13.3"
+node_exporter_image: "prom/node-exporter:v1.12.1"
+gpsd_exporter_image: "ghcr.io/brendanbank/gpsd-prometheus-exporter:latest"

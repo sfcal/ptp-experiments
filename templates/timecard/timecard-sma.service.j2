@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Configure Timecard SMA input/output routing
+# Route signals before the PTP daemons that consume them start.
+Before=ts2phc.service ptp4l.service phc2sys.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/timecard-sma.sh
+
+[Install]
+WantedBy=multi-user.target

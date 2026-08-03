@@ -3,7 +3,7 @@
   hosts: kernel
   become: true
   vars_files:
-    - config.yml
+    - vars/kernel.yml
 
   tasks: 
   - name: Install requirements

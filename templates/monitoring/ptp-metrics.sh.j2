@@ -1,0 +1,140 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Poll ptp4l via pmc and publish Prometheus metrics through the
+# node_exporter textfile collector.
+OUT="{{ ptp_metrics_textfile_dir }}/ptp4l.prom"
+TMP="${OUT}.tmp"
+
+# Absolute path: pmc must come from the same build as the running ptp4l
+# so their management socket defaults match.
+PMC_OUT=$({{ linuxptp_sbin }}/pmc -u -b 0 'GET PORT_DATA_SET' 'GET CURRENT_DATA_SET' 'GET PARENT_DATA_SET' 2>/dev/null)
+
+if [ -z "$PMC_OUT" ]; then
+    printf '# HELP ptp4l_up Whether ptp4l is running and answering pmc queries.\n# TYPE ptp4l_up gauge\nptp4l_up 0\n' > "$TMP"
+    mv "$TMP" "$OUT"
+    exit 0
+fi
+
+echo "$PMC_OUT" | awk '
+    /portState/          { state = $2 }
+    /offsetFromMaster/   { offset = $2 }
+    /meanPathDelay/      { delay = $2 }
+    /gm.ClockClass/      { cc = $2 }
+    /stepsRemoved/       { steps = $2 }
+    END {
+        smap["INITIALIZING"] = 1; smap["FAULTY"] = 2; smap["DISABLED"] = 3
+        smap["LISTENING"] = 4; smap["PRE_MASTER"] = 5; smap["MASTER"] = 6
+        smap["PASSIVE"] = 7; smap["UNCALIBRATED"] = 8; smap["SLAVE"] = 9
+        print "# HELP ptp4l_up Whether ptp4l is running and answering pmc queries."
+        print "# TYPE ptp4l_up gauge"
+        print "ptp4l_up 1"
+        if (state != "") {
+            print "# HELP ptp4l_port_state PTP port state (4=LISTENING, 6=MASTER, 9=SLAVE)."
+            print "# TYPE ptp4l_port_state gauge"
+            printf "ptp4l_port_state{state=\"%s\"} %d\n", state, smap[state]
+        }
+        if (offset != "") {
+            print "# HELP ptp4l_offset_from_master_ns Offset from master in nanoseconds (0 when master)."
+            print "# TYPE ptp4l_offset_from_master_ns gauge"
+            printf "ptp4l_offset_from_master_ns %s\n", offset
+        }
+        if (delay != "") {
+            print "# HELP ptp4l_mean_path_delay_ns Mean path delay in nanoseconds."
+            print "# TYPE ptp4l_mean_path_delay_ns gauge"
+            printf "ptp4l_mean_path_delay_ns %s\n", delay
+        }
+        if (cc != "") {
+            print "# HELP ptp4l_gm_clock_class Grandmaster clock class (6=GNSS-locked)."
+            print "# TYPE ptp4l_gm_clock_class gauge"
+            printf "ptp4l_gm_clock_class %s\n", cc
+        }
+        if (steps != "") {
+            print "# HELP ptp4l_steps_removed Steps removed from the grandmaster."
+            print "# TYPE ptp4l_steps_removed gauge"
+            printf "ptp4l_steps_removed %s\n", steps
+        }
+    }
+' > "$TMP"
+
+# phc2sys stats come from its journal output, e.g.:
+#   [55280.895] /dev/ptp0 phc offset       -27 s2 freq     -99 delay  14202
+PHC2SYS_LINE=$(journalctl -u phc2sys -o cat --no-pager --since "-30 seconds" 2>/dev/null | grep 'phc offset' | tail -1)
+
+if [ -z "$PHC2SYS_LINE" ]; then
+    printf '# HELP phc2sys_up Whether phc2sys is running and reporting sync stats.\n# TYPE phc2sys_up gauge\nphc2sys_up 0\n' >> "$TMP"
+else
+    echo "$PHC2SYS_LINE" | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "offset") offset = $(i+1)
+                if ($i == "freq")   freq = $(i+1)
+                if ($i == "delay")  delay = $(i+1)
+                if ($i ~ /^s[0-9]$/) servo = substr($i, 2)
+            }
+        }
+        END {
+            print "# HELP phc2sys_up Whether phc2sys is running and reporting sync stats."
+            print "# TYPE phc2sys_up gauge"
+            print "phc2sys_up 1"
+            if (offset != "") {
+                print "# HELP phc2sys_offset_ns Offset of the synced clock from the source in nanoseconds."
+                print "# TYPE phc2sys_offset_ns gauge"
+                printf "phc2sys_offset_ns %s\n", offset
+            }
+            if (servo != "") {
+                print "# HELP phc2sys_servo_state Servo state (0=unlocked, 1=step, 2=locked)."
+                print "# TYPE phc2sys_servo_state gauge"
+                printf "phc2sys_servo_state %s\n", servo
+            }
+            if (freq != "") {
+                print "# HELP phc2sys_freq_ppb Frequency adjustment in parts per billion."
+                print "# TYPE phc2sys_freq_ppb gauge"
+                printf "phc2sys_freq_ppb %s\n", freq
+            }
+            if (delay != "") {
+                print "# HELP phc2sys_delay_ns Measured sync path delay in nanoseconds."
+                print "# TYPE phc2sys_delay_ns gauge"
+                printf "phc2sys_delay_ns %s\n", delay
+            }
+        }
+    ' >> "$TMP"
+fi
+
+# ts2phc stats use the same journal format as phc2sys (without delay), e.g.:
+#   [55280.895] /dev/ptp2 offset        12 s2 freq     -34
+TS2PHC_LINE=$(journalctl -u ts2phc -o cat --no-pager --since "-30 seconds" 2>/dev/null | grep ' offset ' | tail -1)
+
+if [ -z "$TS2PHC_LINE" ]; then
+    printf '# HELP ts2phc_up Whether ts2phc is running and reporting sync stats.\n# TYPE ts2phc_up gauge\nts2phc_up 0\n' >> "$TMP"
+else
+    echo "$TS2PHC_LINE" | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "offset") offset = $(i+1)
+                if ($i == "freq")   freq = $(i+1)
+                if ($i ~ /^s[0-9]$/) servo = substr($i, 2)
+            }
+        }
+        END {
+            print "# HELP ts2phc_up Whether ts2phc is running and reporting sync stats."
+            print "# TYPE ts2phc_up gauge"
+            print "ts2phc_up 1"
+            if (offset != "") {
+                print "# HELP ts2phc_offset_ns Offset of the synced PHC from the PPS source in nanoseconds."
+                print "# TYPE ts2phc_offset_ns gauge"
+                printf "ts2phc_offset_ns %s\n", offset
+            }
+            if (servo != "") {
+                print "# HELP ts2phc_servo_state Servo state (0=unlocked, 1=step, 2=locked)."
+                print "# TYPE ts2phc_servo_state gauge"
+                printf "ts2phc_servo_state %s\n", servo
+            }
+            if (freq != "") {
+                print "# HELP ts2phc_freq_ppb Frequency adjustment in parts per billion."
+                print "# TYPE ts2phc_freq_ppb gauge"
+                printf "ts2phc_freq_ppb %s\n", freq
+            }
+        }
+    ' >> "$TMP"
+fi
+mv "$TMP" "$OUT"

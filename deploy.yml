@@ -1,10 +1,8 @@
 ---
 - name: Deploy Time Server (NTP/PTP)
-  hosts: time
+  hosts: ptp_server
   become: true
-  vars_files:
-    - config.yml
-  
+
   handlers:
     - name: Include various service handlers.
       ansible.builtin.import_tasks: handlers/main.yml
@@ -16,11 +14,52 @@
         cache_valid_time: 1800
 
   tasks:
+    - name: Configure network.
+      ansible.builtin.include_tasks: tasks/network.yml
+
     - name: Configure GPS.
       ansible.builtin.include_tasks: tasks/gps.yml
+
+    - name: Configure Timecard SMA routing.
+      ansible.builtin.include_tasks: tasks/timecard.yml
+      when: ptp_role == 'grandmaster' and timecard_sma is defined
 
     - name: Configure chrony.
       ansible.builtin.include_tasks: tasks/chrony.yml
 
+    - name: Install igc-ppsfix DKMS driver.
+      ansible.builtin.include_tasks: tasks/igc-ppsfix.yml
+      when: ptp_role == 'grandmaster' and igc_ppsfix_enabled | default(false)
+
     - name: Configure PTP.
       ansible.builtin.include_tasks: tasks/ptp.yml
+
+    - name: Configure monitoring.
+      ansible.builtin.include_tasks: tasks/monitoring.yml
+
+- name: Deploy PTP Clients (Raspberry Pi)
+  hosts: ptp_clients
+  become: true
+
+  handlers:
+    - name: Include various service handlers.
+      ansible.builtin.import_tasks: handlers/main.yml
+
+  pre_tasks:
+    - name: Update apt cache.
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 1800
+
+  tasks:
+    - name: Configure network.
+      ansible.builtin.include_tasks: tasks/network.yml
+
+    - name: Disable competing time sync daemons.
+      ansible.builtin.include_tasks: tasks/timesync-client.yml
+
+    - name: Configure PTP.
+      ansible.builtin.include_tasks: tasks/ptp.yml
+
+    - name: Configure monitoring (metrics only).
+      ansible.builtin.include_tasks: tasks/monitoring-client.yml

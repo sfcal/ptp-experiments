@@ -1,0 +1,139 @@
+---
+- name: Install Docker.
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+  when: monitoring_enabled
+
+- name: Ensure Docker is running.
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+  when: monitoring_enabled
+
+- name: Create monitoring directory structure.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ monitoring_deploy_path }}"
+    - "{{ monitoring_deploy_path }}/prometheus"
+    - "{{ monitoring_deploy_path }}/prometheus-data"
+    - "{{ monitoring_deploy_path }}/grafana"
+    - "{{ monitoring_deploy_path }}/grafana/provisioning"
+    - "{{ monitoring_deploy_path }}/grafana/provisioning/datasources"
+    - "{{ monitoring_deploy_path }}/grafana/provisioning/dashboards"
+    - "{{ monitoring_deploy_path }}/grafana/dashboards"
+    - "{{ monitoring_deploy_path }}/textfile"
+  when: monitoring_enabled
+
+- name: Set ownership on Grafana data directory.
+  ansible.builtin.file:
+    path: "{{ monitoring_deploy_path }}/grafana"
+    state: directory
+    owner: "{{ monitoring_uid }}"
+    group: "{{ monitoring_gid }}"
+    recurse: true
+  when: monitoring_enabled
+
+- name: Set ownership on Prometheus data directory.
+  ansible.builtin.file:
+    path: "{{ monitoring_deploy_path }}/prometheus-data"
+    state: directory
+    owner: "{{ monitoring_uid }}"
+    group: "{{ monitoring_gid }}"
+    recurse: true
+  when: monitoring_enabled
+
+- name: Deploy Prometheus configuration.
+  ansible.builtin.template:
+    src: templates/monitoring/monitoring-prometheus.yml.j2
+    dest: "{{ monitoring_deploy_path }}/prometheus/prometheus.yml"
+    mode: "0644"
+  notify: Restart monitoring-stack
+  when: monitoring_enabled
+
+- name: Deploy Grafana datasource provisioning.
+  ansible.builtin.template:
+    src: templates/monitoring/grafana-datasources.yml.j2
+    dest: "{{ monitoring_deploy_path }}/grafana/provisioning/datasources/datasources.yml"
+    owner: "{{ monitoring_uid }}"
+    group: "{{ monitoring_gid }}"
+    mode: "0644"
+  notify: Restart monitoring-stack
+  when: monitoring_enabled
+
+- name: Deploy Grafana dashboard provisioning.
+  ansible.builtin.template:
+    src: templates/monitoring/grafana-dashboards.yml.j2
+    dest: "{{ monitoring_deploy_path }}/grafana/provisioning/dashboards/dashboards.yml"
+    owner: "{{ monitoring_uid }}"
+    group: "{{ monitoring_gid }}"
+    mode: "0644"
+  notify: Restart monitoring-stack
+  when: monitoring_enabled
+
+- name: Deploy Grafana dashboards.
+  ansible.builtin.copy:
+    src: files/dashboards/
+    dest: "{{ monitoring_deploy_path }}/grafana/dashboards/"
+    owner: "{{ monitoring_uid }}"
+    group: "{{ monitoring_gid }}"
+    mode: "0644"
+  notify: Restart monitoring-stack
+  when: monitoring_enabled
+
+- name: Deploy compose.yaml.
+  ansible.builtin.template:
+    src: templates/monitoring/monitoring-compose.yaml.j2
+    dest: "{{ monitoring_deploy_path }}/compose.yaml"
+    mode: "0644"
+  notify: Restart monitoring-stack
+  when: monitoring_enabled
+
+- name: Deploy ptp4l metrics collector script.
+  ansible.builtin.template:
+    src: templates/monitoring/ptp-metrics.sh.j2
+    dest: /usr/local/bin/ptp-metrics.sh
+    mode: "0755"
+  when: monitoring_enabled
+
+- name: Deploy ptp4l metrics systemd units.
+  ansible.builtin.template:
+    src: "templates/monitoring/{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - ptp-metrics.service
+    - ptp-metrics.timer
+  when: monitoring_enabled
+
+- name: Ensure ptp4l metrics timer is running.
+  ansible.builtin.systemd_service:
+    name: ptp-metrics.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: monitoring_enabled
+
+- name: Ensure monitoring stack is running.
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_deploy_path }}"
+    state: present
+  when: monitoring_enabled
+
+- name: Check for existing compose file.
+  ansible.builtin.stat:
+    path: "{{ monitoring_deploy_path }}/compose.yaml"
+  register: monitoring_compose_file
+  when: not monitoring_enabled
+
+- name: Stop and remove monitoring stack.
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_deploy_path }}"
+    state: absent
+  when: not monitoring_enabled and monitoring_compose_file.stat.exists

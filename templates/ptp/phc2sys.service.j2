@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/phc2sys -s {{ phc2sys_source }} -c {{ phc2sys_clock }} --step_threshold=1 --transportSpecific=1 {{ phc2sys_extra_opts }}
+ExecStart={{ linuxptp_sbin }}/phc2sys -s {{ phc2sys_source }} -c {{ phc2sys_clock }} --step_threshold=1 {{ phc2sys_extra_opts }}
 Restart=always
 RestartSec=3
 

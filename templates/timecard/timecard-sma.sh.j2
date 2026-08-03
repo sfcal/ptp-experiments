@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Apply Timecard SMA routing (ptp_ocp sysfs writes do not survive reboot).
+# Available values: cat $SYSFS/available_sma_inputs / available_sma_outputs
+set -euo pipefail
+
+SYSFS="/sys/class/timecard/{{ timecard_device }}"
+
+for _ in $(seq {{ timecard_sma_wait_timeout }}); do
+  [ -d "$SYSFS" ] && break
+  sleep 1
+done
+[ -d "$SYSFS" ] || { echo "timecard {{ timecard_device }} not present after {{ timecard_sma_wait_timeout }}s" >&2; exit 1; }
+
+{% for sma, mode in timecard_sma | dictsort %}
+if [ "$(cat "$SYSFS/{{ sma }}")" != "{{ mode }}" ]; then
+  echo "{{ mode }}" > "$SYSFS/{{ sma }}"
+  echo "{{ sma }} <- {{ mode }}"
+fi
+{% else %}
+echo "no SMA mappings configured (timecard_sma is empty); nothing to do"
+{% endfor %}
