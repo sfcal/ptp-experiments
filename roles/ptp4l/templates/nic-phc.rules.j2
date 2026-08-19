@@ -2,8 +2,15 @@
 # Stable device path for the PHC that ptp4l serves/disciplines on
 # {{ ptp4l_ptp_iface }}. /dev/ptpN numbering depends on driver probe order
 # and changes when NICs are added or removed (seen 2026-08-04 on the
-# grandmaster: a NIC swap pointed chrony/ts2phc at a Realtek PHC). DRIVERS
-# matches the parent device's driver -- deterministic at coldplug, and on
-# the Pi 5 it selects the PHY's PHC (the one ptp4l uses) rather than the
-# MAC's second PHC.
+# grandmaster: a NIC swap pointed chrony/ts2phc at a Realtek PHC).
+{% if nic_phc_match == 'pci' %}
+# KERNELS matches the NIC's PCI address -- required on hosts with more than
+# one NIC of the same driver (a bare DRIVERS match is ambiguous there), and
+# immune to the netdev-rename race at coldplug.
+SUBSYSTEM=="ptp", KERNELS=="{{ nic_phc_pci }}", SYMLINK+="ptp-nic"
+{% else %}
+# DRIVERS matches the parent device's driver -- deterministic at coldplug,
+# and on the Pi 5 it selects the PHY's PHC (the one ptp4l uses) rather than
+# the MAC's second PHC. Only safe when a single NIC uses this driver.
 SUBSYSTEM=="ptp", DRIVERS=="{{ nic_phc_driver }}", SYMLINK+="ptp-nic"
+{% endif %}

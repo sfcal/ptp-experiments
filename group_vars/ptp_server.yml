@@ -4,9 +4,10 @@ ptp_role: grandmaster
 
 network_interface: "enp1s0"
 
-# Driver owning the PHC that ptp4l serves on the TimeNIC (udev DRIVERS
-# match for the /dev/ptp-nic symlink).
-nic_phc_driver: igc
+# The GM has TWO igc NICs (TimeNIC enp1s0 + enp3s0), so the /dev/ptp-nic
+# udev rule must match the TimeNIC's PCI address, not the driver name.
+nic_phc_match: pci
+nic_phc_pci: "0000:01:00.0"
 
 # GPSd configuration. /dev/pps-timecard is the Timecard's kernel PPS device
 # (udev symlink, files/timecard-ptp.rules); with the ptp-ocp-gnsspps DKMS
@@ -52,6 +53,12 @@ gpsd_exporter_pps_bucket_count: 40
 # on the host for the accepted values.
 timecard_device: ocp0
 timecard_sma_wait_timeout: 30  # seconds to wait for the sysfs node at boot
+
+# UTC-TAI offset the FPGA applies when steering the PHC from GNSS TOD. The
+# TAP PTM image boots with 0 (PHC would run in UTC); the PTP timescale and
+# chrony's 'tai' refclock option both need the PHC in TAI. 37 since 2017;
+# bump on the next leap second.
+timecard_utc_tai_offset: 37
 timecard_sma:
   sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
   sma2: "OUT: 10Mhz"

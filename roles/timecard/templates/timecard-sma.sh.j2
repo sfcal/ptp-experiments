@@ -12,6 +12,17 @@ for _ in $(seq {{ timecard_sma_wait_timeout }}); do
 done
 [ -d "$SYSFS" ] || { echo "timecard {{ timecard_device }} not present after {{ timecard_sma_wait_timeout }}s" >&2; exit 1; }
 
+{% if timecard_utc_tai_offset is defined %}
+# The FPGA's TOD engine applies this when setting the PHC from GNSS time.
+# Without it (the TAP PTM image defaults to 0) the PHC runs in UTC: chrony's
+# 'tai' refclock option mis-corrects by +37 s and ptp4l serves a UTC
+# timescale as TAI. Bump when the IERS announce a leap second.
+if [ "$(cat "$SYSFS/utc_tai_offset")" != "{{ timecard_utc_tai_offset }}" ]; then
+  echo "{{ timecard_utc_tai_offset }}" > "$SYSFS/utc_tai_offset"
+  echo "utc_tai_offset <- {{ timecard_utc_tai_offset }}"
+fi
+{% endif %}
+
 {% for sma, mode in timecard_sma | dictsort %}
 if [ "$(cat "$SYSFS/{{ sma }}")" != "{{ mode }}" ]; then
   echo "{{ mode }}" > "$SYSFS/{{ sma }}"
