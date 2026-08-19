@@ -161,6 +161,6 @@ prometheus_image: "prom/prometheus:v3.13.1"
 prometheus_port: 9090
 prometheus_retention: 30d
 
-chrony_exporter_image: "quay.io/superq/chrony-exporter:v0.13.3"
+chrony_exporter_image: "quay.io/superq/chrony-exporter:v0.14.0"
 node_exporter_image: "prom/node-exporter:v1.12.1"
 gpsd_exporter_image: "ghcr.io/brendanbank/gpsd-prometheus-exporter:latest"
