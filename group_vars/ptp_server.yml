@@ -101,10 +101,13 @@ chrony_servers:
 
 chrony_server_options: iburst xleave
 
-# Services restarted after a linuxptp rebuild (see roles/linuxptp).
-linuxptp_managed_services:
-  - ptp4l
-  - ts2phc
+# NIC-PHC discipline pipeline. Each profile is a file in vars/gm_pipelines/
+# setting the gm_*_enabled flags and the services' options; switch profiles
+# by changing this one variable (or -e gm_pipeline=...) and redeploying with
+# --tags ptp,monitoring.
+#   timecard-ts2phc   hardware: Timecard SMA PPS -> i226 SDP1 -> ts2phc
+#   timecard-phc2sys  software: chrony -> CLOCK_REALTIME -> phc2sys
+gm_pipeline: timecard-ts2phc
 
 # Grandmaster-specific ptp4l.conf directives (appended to the shared header
 # in roles/ptp4l/templates/ptp4l.conf.j2).
@@ -129,22 +132,11 @@ ptp4l_conf_extra: |
   # Announce message rate: 2^0 = 1 msg/sec
   logAnnounceInterval 0
 
-# The NIC PHC (/dev/ptp0, served by ptp4l) is synced from the Timecard by
-# ts2phc: Timecard 1PPS -> TimeNIC SDP1, hardware edge timestamping (~6 ns
-# rms on the TICC). Needs the igc-ppsfix driver loaded, an SMA cable from
-# Timecard PPS OUT to TimeNIC PPS IN, and timecard_sma routing "OUT: PHC"
-# on the cabled connector (bench-check: testptp shows extts events).
-ts2phc_service_state: started
-ts2phc_service_enabled: true
-ts2phc_logging_level: 7
-ts2phc_clock: '/dev/ptp-nic'  # NIC PHC, disciplined by the Timecard's PPS
-ts2phc_source: 'generic'
-ts2phc_pin_index: 1  # TimeNIC SDP1 = PPS IN
-ts2phc_extra_opts: '-m'
-# ts2phc's generic source aligns second edges only; the unit coarse-sets the
-# NIC PHC from the Timecard first so the absolute (TAI) seconds are right.
-ts2phc_presync_source: '/dev/ptp-timecard'
-ts2phc_presync_timeout: 10
+# ts2phc/phc2sys options live in the pipeline profile files under
+# vars/gm_pipelines/ (see gm_pipeline above). The hardware path needs the
+# igc-ppsfix driver loaded, an SMA cable from Timecard PPS OUT to TimeNIC
+# PPS IN, and timecard_sma routing "OUT: PHC" on the cabled connector
+# (bench-check: testptp shows extts events).
 
 # Monitoring stack (Prometheus + exporters) running in Docker. Grafana
 # lives on the homelab Grafana server, which points a datasource (uid

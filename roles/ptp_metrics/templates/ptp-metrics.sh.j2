@@ -90,7 +90,7 @@ else
 fi
 {% endif %}
 
-{% if ptp_role == 'grandmaster' %}
+{% if gm_ts2phc_enabled | default(false) %}
 # ts2phc journal output, e.g.:
 #   [55280.895] /dev/ptp2 offset        12 s2 freq     -34
 # The unit's phc2sys presync (ExecStartPre) logs "/dev/ptp0 phc offset ..."
@@ -143,7 +143,49 @@ else
     TS2PHC_NO_EVENTS=0
 fi
 printf '# HELP ts2phc_no_pps_events ts2phc is running but received no PPS events in the last 30s.\n# TYPE ts2phc_no_pps_events gauge\nts2phc_no_pps_events %s\n' "$TS2PHC_NO_EVENTS" >> "$TMP"
+{% endif %}
 
+{% if gm_phc2sys_enabled | default(false) %}
+# phc2sys journal output, e.g.:
+#   CLOCK_REALTIME phc offset       -42 s2 freq   -1234 delay    980
+PHC2SYS_LINE=$(journalctl -u phc2sys -o cat --no-pager --since "-30 seconds" 2>/dev/null | grep ' offset ' | tail -1)
+
+if [ -z "$PHC2SYS_LINE" ]; then
+    printf '# HELP phc2sys_up Whether phc2sys is running and reporting sync stats.\n# TYPE phc2sys_up gauge\nphc2sys_up 0\n' >> "$TMP"
+else
+    echo "$PHC2SYS_LINE" | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "offset") offset = $(i+1)
+                if ($i == "freq")   freq = $(i+1)
+                if ($i ~ /^s[0-9]$/) servo = substr($i, 2)
+            }
+        }
+        END {
+            print "# HELP phc2sys_up Whether phc2sys is running and reporting sync stats."
+            print "# TYPE phc2sys_up gauge"
+            print "phc2sys_up 1"
+            if (offset != "") {
+                print "# HELP phc2sys_offset_ns Offset of the NIC PHC from the system clock in nanoseconds."
+                print "# TYPE phc2sys_offset_ns gauge"
+                printf "phc2sys_offset_ns %s\n", offset
+            }
+            if (servo != "") {
+                print "# HELP phc2sys_servo_state Servo state (0=unlocked, 1=step, 2=locked)."
+                print "# TYPE phc2sys_servo_state gauge"
+                printf "phc2sys_servo_state %s\n", servo
+            }
+            if (freq != "") {
+                print "# HELP phc2sys_freq_ppb Frequency adjustment in parts per billion."
+                print "# TYPE phc2sys_freq_ppb gauge"
+                printf "phc2sys_freq_ppb %s\n", freq
+            }
+        }
+    ' >> "$TMP"
+fi
+{% endif %}
+
+{% if ptp_role == 'grandmaster' %}
 # timecard-sma.service is a boot oneshot (SMA routing + kernel PPS enable);
 # it fails when the FPGA comes up wedged (sysfs writes return EOPNOTSUPP).
 if [ "$(systemctl is-failed timecard-sma.service 2>/dev/null)" = "failed" ]; then

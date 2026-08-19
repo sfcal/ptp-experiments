@@ -99,6 +99,7 @@ groups:
           summary: "timecard-sma.service failed: SMA routing / kernel PPS not configured"
           description: "Timecard FPGA likely wedged (all-ones firmware, EOPNOTSUPP sysfs); power-cycle the GM."
 
+{% if gm_ts2phc_enabled | default(false) %}
       # ts2phc logs "poll returns zero, no events" when the Timecard PPS
       # edge never reaches the NIC. ptp4l does not care: it keeps serving
       # the free-running NIC PHC to every client.
@@ -122,6 +123,29 @@ groups:
         annotations:
           summary: "ts2phc is not reporting sync stats"
           description: "No ts2phc offset samples in the journal; NIC PHC discipline is unconfirmed."
+{% endif %}
+{% if gm_phc2sys_enabled | default(false) %}
+      - alert: Phc2sysDown
+        expr: phc2sys_up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "phc2sys is not reporting sync stats"
+          description: "No phc2sys offset samples in the journal; NIC PHC discipline is unconfirmed."
+
+      # Software steering from CLOCK_REALTIME normally holds well under a
+      # microsecond on the i226's PCIe path; sustained 10 us means the loop
+      # is broken or the system clock is being dragged around.
+      - alert: Phc2sysOffsetHigh
+        expr: abs(phc2sys_offset_ns{job="node"}) > 10000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "phc2sys NIC PHC offset above 10 us"
+          description: "The software-disciplined NIC PHC is not tracking the system clock."
+{% endif %}
 
       # gpsd pairs the raw GNSS 1PPS on /dev/pps-timecard with NMEA time;
       # the exporter only emits PPS histogram samples while asserts arrive.
@@ -135,3 +159,13 @@ groups:
         annotations:
           summary: "No GNSS PPS pulses reaching gpsd"
           description: "gpsd PPS histogram is not advancing; check /dev/pps-timecard, gpsd, and the exporter."
+
+  # Pipeline-neutral series for dashboards: whichever discipline leg the
+  # active gm_pipeline profile runs feeds the same recorded metric, so
+  # ptp.json survives profile switches.
+  - name: gm_pipeline_recording
+    rules:
+      - record: gm:nic_phc_offset_ns
+        expr: ts2phc_offset_ns{job="node"} or phc2sys_offset_ns{job="node"}
+      - record: gm:nic_phc_freq_ppb
+        expr: ts2phc_freq_ppb{job="node"} or phc2sys_freq_ppb{job="node"}

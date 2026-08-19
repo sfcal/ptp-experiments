@@ -7,6 +7,12 @@
   hosts: ptp_server
   become: true
 
+  # Pipeline profile selected by gm_pipeline (group_vars/ptp_server.yml or
+  # -e gm_pipeline=...). Play-scoped so the monitoring roles see the same
+  # profile flags. A typo'd profile name fails here, at play start.
+  vars_files:
+    - "vars/gm_pipelines/{{ gm_pipeline }}.yml"
+
   pre_tasks:
     - name: Update apt cache.
       ansible.builtin.apt:

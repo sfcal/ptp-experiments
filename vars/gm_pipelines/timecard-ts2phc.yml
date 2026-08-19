@@ -1,0 +1,26 @@
+---
+# Hardware pipeline (default): the Timecard's SMA PPS output is cabled to
+# the TimeNIC's SDP1; ts2phc hardware-timestamps the edges and disciplines
+# the NIC PHC (~6 ns rms on the TICC). ptp4l serves that PHC.
+#
+#   GNSS -> Timecard FPGA PHC -> SMA "OUT: PHC" -> i226 SDP1 -> ts2phc
+#        -> NIC PHC (/dev/ptp-nic) -> ptp4l -> network
+gm_ts2phc_enabled: true
+gm_phc2sys_enabled: false
+
+# Restarted after a linuxptp rebuild (roles/linuxptp handler).
+linuxptp_managed_services:
+  - ptp4l
+  - ts2phc
+
+ts2phc_service_state: started
+ts2phc_service_enabled: true
+ts2phc_logging_level: 7
+ts2phc_clock: /dev/ptp-nic  # NIC PHC, disciplined by the Timecard's PPS
+ts2phc_source: generic
+ts2phc_pin_index: 1  # TimeNIC SDP1 = PPS IN
+ts2phc_extra_opts: '-m'
+# ts2phc's generic source aligns second edges only; the unit coarse-sets the
+# NIC PHC from the Timecard first so the absolute (TAI) seconds are right.
+ts2phc_presync_source: /dev/ptp-timecard
+ts2phc_presync_timeout: 10
