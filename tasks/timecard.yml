@@ -3,6 +3,20 @@
 # Sysfs writes do not survive a reboot, so a oneshot systemd unit reapplies
 # the configured mapping at boot; the handler applies it at deploy time.
 
+- name: Deploy Timecard udev rules (stable /dev/ptp-timecard and /dev/pps-timecard).
+  ansible.builtin.copy:
+    src: timecard-ptp.rules
+    dest: /etc/udev/rules.d/99-timecard-ptp.rules
+    owner: root
+    group: root
+    mode: "0644"
+  register: timecard_udev
+
+- name: Reload udev and apply the Timecard symlink rules.
+  ansible.builtin.shell:
+    cmd: udevadm control --reload && udevadm trigger --subsystem-match=ptp --subsystem-match=pps
+  when: timecard_udev.changed
+
 - name: Deploy Timecard SMA routing script.
   ansible.builtin.template:
     src: templates/timecard/timecard-sma.sh.j2

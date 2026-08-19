@@ -1,13 +1,17 @@
 ---
-# Grandmaster: GNSS Timecard -> ts2phc -> phc2sys -> ptp4l (masterOnly).
+# Grandmaster: GNSS Timecard -> ts2phc -> ptp4l (masterOnly).
 ptp_role: grandmaster
 
 network_interface: "enp1s0"
 
-# GPSd configuration.
+# GPSd configuration. /dev/pps-timecard is the Timecard's kernel PPS device
+# (udev symlink, files/timecard-ptp.rules); with the ptp-ocp-gnsspps DKMS
+# module loaded it carries the raw GNSS receiver 1PPS, which gpsd pairs with
+# the NMEA time from ttyS7 and reports as class PPS (-> gpsd-exporter ->
+# Grafana "Clock offset from PPS" panels).
 gpsd_state: started
 gpsd_enabled: true
-gpsd_devices: "/dev/ttyS7"
+gpsd_devices: "/dev/ttyS7 /dev/pps-timecard"
 gpsd_baud: "115200"
 gpsd_options: "-s {{ gpsd_baud }} -n"
 
@@ -15,9 +19,26 @@ gpsd_options: "-s {{ gpsd_baud }} -n"
 # Installed on disk only -- loads at the next reboot. Ansible flags
 # /run/reboot-required and never reloads igc live (enp1s0 is the igc NIC).
 igc_ppsfix_enabled: true
-igc_ppsfix_version: "7.0.0-ppsfix.1"  # must match igc-ppsfix/dkms/dkms.conf
-igc_ppsfix_deploy_path: /opt/igc-ppsfix
 igc_ppsfix_auto_reboot: false  # opt-in: let Ansible reboot when a new build is staged
+
+# ptp-ocp-gnsspps DKMS driver (raw GNSS PPS on the Timecard kernel PPS device,
+# see ptp-ocp-gnsspps/README.md). Same conventions as igc-ppsfix: installed on
+# disk only, loads at the next reboot, /run/reboot-required flagged. Until the
+# reboot, /dev/pps-timecard carries the disciplined FPGA PPS (stock driver).
+ptp_ocp_gnsspps_enabled: true
+ptp_ocp_gnsspps_auto_reboot: false
+
+# Enable kernel PPS events on the Timecard PHC at boot (PTP_ENABLE_PPS ioctl
+# in timecard-sma.sh). Without this, /dev/pps-timecard exists but never
+# asserts.
+timecard_kernel_pps: true
+
+# gpsd-exporter PPS histogram (gpsd_pps_histogram_bucket, used by the GPSD
+# dashboard's "Clock offset from PPS" panels). Bucket span = size * count,
+# centered on 0: 1000 ns x 40 = +/-20 us -- PPS asserts are timestamped by
+# the system clock at IRQ time, so interrupt latency dominates the spread.
+gpsd_exporter_pps_bucket_ns: 1000
+gpsd_exporter_pps_bucket_count: 40
 
 # Timecard SMA routing (ptp_ocp sysfs). Writes don't persist across reboot,
 # so a systemd oneshot (timecard-sma.service) reapplies them at boot.
@@ -28,13 +49,19 @@ timecard_device: ocp0
 timecard_sma_wait_timeout: 30  # seconds to wait for the sysfs node at boot
 timecard_sma:
   sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
-#  sma2: "IN: TS1"     # timestamp incoming signal on SMA2
+  sma2: "OUT: 10Mhz"
+  sma3: "OUT: PHC"     
 
 # Refclock to be used as a time source.
 # See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
 chrony_refclock: |
-  # Uncomment to use Timecard PHC as time source.
-  refclock PHC /dev/ptp2 poll 0 refid AC precision 1e-9 tai prefer
+  # Uncomment to use Timecard PHC as time source. /dev/ptp-timecard is a
+  # udev symlink (files/timecard-ptp.rules) that survives NIC swaps.
+  # nocrossts: PCIe PTM cross-timestamping on the Timecard link can die at
+  # runtime ("Exceeded number of tries for PTM cycle" in dmesg); chrony then
+  # never falls back and the refclock goes unreachable (seen 2026-08-04).
+  # Plain extended reads are sub-us and immune to PTM state.
+  refclock PHC /dev/ptp-timecard:nocrossts poll 0 refid AC precision 1e-9 tai prefer
 
   # Uncomment to use NIC's PHC as time source.
   # refclock PHC /dev/ptp0 poll 0 dpoll -5 tai  # Use NIC's PHC
@@ -70,16 +97,13 @@ chrony_server_options: iburst xleave
 ptp4l_service_state: started
 ptp4l_service_enabled: true
 
-# How the NIC PHC (/dev/ptp0, served by ptp4l) is synced from the Timecard:
-#   phc2sys - PHC-to-PHC over PCIe reads (works with the stock igc driver).
-#   ts2phc  - Timecard 1PPS -> TimeNIC SDP1 (needs the igc-ppsfix driver
-#             loaded, an SMA cable from Timecard PPS OUT to TimeNIC PPS IN,
-#             and timecard_sma routing "OUT: PHC" on the cabled connector).
-# Exactly one of the two services runs; the other is stopped and disabled.
-nic_sync_method: phc2sys
-
-ts2phc_service_state: "{{ 'started' if nic_sync_method == 'ts2phc' else 'stopped' }}"
-ts2phc_service_enabled: "{{ nic_sync_method == 'ts2phc' }}"
+# The NIC PHC (/dev/ptp0, served by ptp4l) is synced from the Timecard by
+# ts2phc: Timecard 1PPS -> TimeNIC SDP1, hardware edge timestamping (~6 ns
+# rms on the TICC). Needs the igc-ppsfix driver loaded, an SMA cable from
+# Timecard PPS OUT to TimeNIC PPS IN, and timecard_sma routing "OUT: PHC"
+# on the cabled connector (bench-check: testptp shows extts events).
+ts2phc_service_state: started
+ts2phc_service_enabled: true
 ts2phc_logging_level: 7
 ts2phc_clock: '/dev/ptp0'  # NIC PHC, disciplined by the Timecard's PPS
 ts2phc_source: 'generic'
@@ -87,20 +111,8 @@ ts2phc_pin_index: 1  # TimeNIC SDP1 = PPS IN
 ts2phc_extra_opts: '-m'
 # ts2phc's generic source aligns second edges only; the unit coarse-sets the
 # NIC PHC from the Timecard first so the absolute (TAI) seconds are right.
-ts2phc_presync_source: '/dev/ptp2'
+ts2phc_presync_source: '/dev/ptp-timecard'
 ts2phc_presync_timeout: 10
-
-# Discipline the NIC PHC (served by ptp4l) from the Timecard PHC.
-# Do not point phc2sys_clock at CLOCK_REALTIME while chrony is running --
-# chrony already disciplines the system clock from the Timecard refclock.
-phc2sys_service_state: "{{ 'started' if nic_sync_method == 'phc2sys' else 'stopped' }}"
-phc2sys_service_enabled: "{{ nic_sync_method == 'phc2sys' }}"
-phc2sys_clock: '/dev/ptp0'
-phc2sys_source: '/dev/ptp2'
-# Both PHCs hold TAI, so the phc2sys time offset between them is 0.
-# --transportSpecific=1 moved here from the unit template (clients must
-# omit it: it has to match ptp4l's transportSpecific, default 0).
-phc2sys_extra_opts: '--transportSpecific=1 -O 0 -m'
 
 # Monitoring stack (Grafana + Prometheus + exporters) running in Docker.
 monitoring_deploy_path: /opt/monitoring

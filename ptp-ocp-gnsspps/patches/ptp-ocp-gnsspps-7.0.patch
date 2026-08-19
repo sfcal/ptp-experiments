@@ -1,0 +1,52 @@
+--- a/drivers/ptp/ptp_ocp.c
++++ b/drivers/ptp/ptp_ocp.c
+@@ -1369,6 +1369,22 @@
+ ptp_ocp_null_adjphase(struct ptp_clock_info *ptp_info, s32 phase_ns)
+ {
+ 	return -EOPNOTSUPP;
++}
++
++/* gnsspps: feed the kernel PPS device (/dev/ppsN) from the raw GNSS 1PPS
++ * timestamper (ts0) instead of the disciplined FPGA PPS timestamper. The
++ * raw pulse then keeps true GNSS semantics: asserts stop when the receiver
++ * stops pulsing, instead of free-running on the disciplined clock.
++ */
++static bool gnss_pps;
++module_param(gnss_pps, bool, 0444);
++MODULE_PARM_DESC(gnss_pps,
++		 "Feed the kernel PPS device from the raw GNSS 1PPS timestamper (ts0) instead of the disciplined FPGA PPS (default 0)");
++
++static struct ptp_ocp_ext_src *
++ptp_ocp_pps_source(struct ptp_ocp *bp)
++{
++	return gnss_pps ? bp->ts0 : bp->pps;
+ }
+ 
+ static int
+@@ -1406,7 +1422,7 @@
+ 		break;
+ 	case PTP_CLK_REQ_PPS:
+ 		req = OCP_REQ_PPS;
+-		ext = bp->pps;
++		ext = ptp_ocp_pps_source(bp);
+ 		break;
+ 	case PTP_CLK_REQ_PEROUT:
+ 		switch (rq->perout.index) {
+@@ -2165,7 +2181,7 @@
+ 	struct ptp_clock_event ev;
+ 	u32 sec, nsec;
+ 
+-	if (ext == ext->bp->pps) {
++	if (ext == ptp_ocp_pps_source(ext->bp)) {
+ 		if (ext->bp->pps_req_map & OCP_REQ_PPS) {
+ 			ev.type = PTP_CLOCK_PPS;
+ 			ptp_clock_event(ext->bp->ptp, &ev);
+@@ -2198,7 +2214,7 @@
+ 	struct ts_reg __iomem *reg = ext->mem;
+ 	struct ptp_ocp *bp = ext->bp;
+ 
+-	if (ext == bp->pps) {
++	if (ext == ptp_ocp_pps_source(bp)) {
+ 		u32 old_map = bp->pps_req_map;
+ 
+ 		if (enable)

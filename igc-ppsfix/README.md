@@ -1,8 +1,8 @@
 # igc PPS fix for the TimeNIC (Intel I226)
 
 Driver fix for the grandmaster, so ts2phc can discipline the NIC PHC from
-the Timecard's 1PPS instead of going through phc2sys and the system clock's
-oscillator.
+the Timecard's 1PPS with hardware edge timestamping instead of a software
+PHC-to-PHC copy through the system clock's oscillator.
 
 **Route A is automated** by `tasks/igc-ppsfix.yml` in the main deployment
 (gated by `igc_ppsfix_enabled` in `group_vars/time.yml`): Ansible copies
@@ -130,8 +130,8 @@ echo 1 | sudo tee /sys/module/igc/parameters/edge_check_invert
 ```
 
 Caveat: ts2phc's `generic` source only aligns the second edge — coarse-set
-the NIC PHC first (within ±0.5 s, e.g. one phc2sys step from the Timecard)
-so the seconds are numbered correctly.
+the NIC PHC first (within ±0.5 s; the ts2phc unit's ExecStartPre does this
+from the Timecard) so the seconds are numbered correctly.
 
 ## Provenance / license
 

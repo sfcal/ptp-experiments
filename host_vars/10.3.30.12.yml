@@ -1,0 +1,12 @@
+---
+network_static_ip: "10.3.30.12/24"
+# This client's cable is in the PCIe Intel NIC, not the onboard eth0.
+network_interface: "enP1p1s0"
+
+# chrony measured 8 ns rms / 66 ns max here (2026-08-04) -- median
+# filtering pays off even on the i226's clean PCIe read path.
+
+# igc-ppsfix on the i226 enables clean SDP PPS in/out (EXTTS/PEROUT fixes).
+# Unlike the GM, a client reboot is cheap, so let Ansible reboot to load it.
+igc_ppsfix_enabled: true
+igc_ppsfix_auto_reboot: true

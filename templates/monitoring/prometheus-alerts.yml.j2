@@ -1,0 +1,137 @@
+# {{ ansible_managed }}
+# Chrony and Timecard alerting rules. No Alertmanager is deployed yet: these
+# evaluate in Prometheus (visible at /alerts and in Grafana) but do not
+# notify anywhere.
+groups:
+  - name: chrony
+    rules:
+      - alert: ChronyExporterDown
+        expr: up{job="chrony"} == 0 or chrony_up{job="chrony"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "chrony_exporter cannot be scraped or cannot reach chronyd"
+          description: "No chrony metrics for 5m; all other chrony alerts are blind."
+
+      # chrony_exporter v0.13.3 exposes no leap-status metric; chronyd reports
+      # stratum 0 when leap status is "Not synchronised", so alert on that.
+      - alert: ChronyNotSynchronised
+        expr: chrony_tracking_stratum{job="chrony"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "chronyd is not synchronised to any source"
+          description: "Leap status is effectively 'Not synchronised' (stratum 0)."
+
+      # This host is a stratum-1 server; stratum > 1 means it has fallen back
+      # from the Timecard refclock to network sources.
+      - alert: ChronyStratumDegraded
+        expr: chrony_tracking_stratum{job="chrony"} > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stratum is {{ '{{ $value }}' }} (expected 1)"
+          description: "chronyd is no longer serving as stratum-1; check the AC refclock."
+
+      # Note: chrony_tracking_remote_reference is unreliable in exporter
+      # v0.13.3 (stays 1 even when the AC refclock is selected), so key off
+      # the tracking_info label instead.
+      - alert: ChronyReferenceNotPHC
+        expr: (sum(chrony_tracking_info{job="chrony",tracking_name="AC"}) or vector(0)) < 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Selected source is a remote NTP server, not the Timecard PHC"
+          description: "System clock accuracy degrades from ~30 ns to NTP-path quality (100 us+)."
+
+      # Catches PHC read failures fast (e.g. the 2026-08-04 PCIe PTM
+      # breakage, where cross-timestamp ioctls timed out silently).
+      - alert: ChronyPHCRefclockUnreachable
+        expr: chrony_sources_reachability_ratio{job="chrony",source_name="AC"} < 0.5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Timecard PHC refclock (AC) is unreachable"
+          description: "chronyd is not getting samples from /dev/ptp2; see dmesg for PTM/ptp_ocp errors."
+
+      - alert: ChronySkewHigh
+        expr: chrony_tracking_skew_ppms{job="chrony"} > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Frequency skew estimate above 1 ppm"
+          description: "Oscillator estimate is unstable; check temperature and source quality."
+
+      # PHC-locked steady state is tens of ns RMS; NTP fallback is 30 us+.
+      # 10 us cleanly separates "PHC-grade" from "degraded".
+      - alert: ChronyRmsOffsetHigh
+        expr: chrony_tracking_rms_offset_seconds{job="chrony"} > 10e-6
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RMS offset above 10 us"
+          description: "System clock no longer holding PHC-grade sync."
+
+  # Coverage for the 2026-08-14 incident: the Timecard FPGA came up wedged
+  # after a reboot (devlink fw 255.32767 all-ones, "could not read eeprom:
+  # -517", SMA sysfs writes EOPNOTSUPP) and ts2phc saw no PPS events all day
+  # while ptp4l kept serving the free-running NIC PHC. All these metrics come
+  # from ptp-metrics.sh on the GM (job="node"); clients also publish
+  # ts2phc series historically, hence the explicit job filter.
+  - name: timecard
+    rules:
+      # Boot oneshot that routes the SMA connectors and enables kernel PPS.
+      # It fails exactly when the FPGA is wedged, so it is the earliest and
+      # most direct signal after a bad boot.
+      - alert: TimecardSmaFailed
+        expr: timecard_sma_failed{job="node"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "timecard-sma.service failed: SMA routing / kernel PPS not configured"
+          description: "Timecard FPGA likely wedged (all-ones firmware, EOPNOTSUPP sysfs); power-cycle the GM."
+
+      # ts2phc logs "poll returns zero, no events" when the Timecard PPS
+      # edge never reaches the NIC. ptp4l does not care: it keeps serving
+      # the free-running NIC PHC to every client.
+      - alert: Ts2phcNoPpsEvents
+        expr: ts2phc_no_pps_events{job="node"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ts2phc is running but sees no PPS events"
+          description: "NIC PHC is free-running while ptp4l keeps serving it; clients drift with it."
+
+      # Complements Ts2phcNoPpsEvents: fires when ts2phc reports no offset
+      # samples at all (service stopped, crashed, or eventless after the
+      # journal window empties).
+      - alert: Ts2phcDown
+        expr: ts2phc_up{job="node"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ts2phc is not reporting sync stats"
+          description: "No ts2phc offset samples in the journal; NIC PHC discipline is unconfirmed."
+
+      # gpsd pairs the raw GNSS 1PPS on /dev/pps-timecard with NMEA time;
+      # the exporter only emits PPS histogram samples while asserts arrive.
+      # "or vector(0)" also covers the series never appearing (fresh boot in
+      # the wedged state) and the gpsd exporter being down entirely.
+      - alert: GnssPpsDropout
+        expr: (sum(rate(gpsd_pps_histogram_bucket{job="gpsd"}[5m])) or vector(0)) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No GNSS PPS pulses reaching gpsd"
+          description: "gpsd PPS histogram is not advancing; check /dev/pps-timecard, gpsd, and the exporter."

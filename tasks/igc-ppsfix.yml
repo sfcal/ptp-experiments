@@ -114,8 +114,8 @@
   ansible.builtin.debug:
     msg: >-
       igc-ppsfix is installed on disk but the RUNNING igc module is still the
-      stock driver. Reboot the grandmaster to load it (do NOT reload the module
-      live: enp1s0 is the igc NIC carrying this SSH session). Set
+      stock driver. Reboot this host to load it (do NOT reload the module
+      live: the igc NIC carries this SSH session). Set
       igc_ppsfix_auto_reboot=true to let Ansible reboot instead.
   when: igc_ppsfix_reboot_required
 

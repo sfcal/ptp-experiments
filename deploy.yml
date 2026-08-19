@@ -31,6 +31,10 @@
       ansible.builtin.include_tasks: tasks/igc-ppsfix.yml
       when: ptp_role == 'grandmaster' and igc_ppsfix_enabled | default(false)
 
+    - name: Install ptp-ocp-gnsspps DKMS driver.
+      ansible.builtin.include_tasks: tasks/ptp-ocp-gnsspps.yml
+      when: ptp_role == 'grandmaster' and ptp_ocp_gnsspps_enabled | default(false)
+
     - name: Configure PTP.
       ansible.builtin.include_tasks: tasks/ptp.yml
 
@@ -58,8 +62,15 @@
     - name: Disable competing time sync daemons.
       ansible.builtin.include_tasks: tasks/timesync-client.yml
 
+    - name: Install igc-ppsfix DKMS driver (i226 clients).
+      ansible.builtin.include_tasks: tasks/igc-ppsfix.yml
+      when: igc_ppsfix_enabled | default(false)
+
     - name: Configure PTP.
       ansible.builtin.include_tasks: tasks/ptp.yml
+
+    - name: Configure chrony (system clock from NIC PHC).
+      ansible.builtin.include_tasks: tasks/chrony-client.yml
 
     - name: Configure monitoring (metrics only).
       ansible.builtin.include_tasks: tasks/monitoring-client.yml

@@ -16,5 +16,16 @@ linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
 linuxptp_build_location: /opt/linuxptp
 linuxptp_sbin: /usr/local/sbin
 
+# igc-ppsfix DKMS driver (I226 PPS fixes). Shared here because both the
+# grandmaster (TimeNIC) and clients with i226 NICs can use it; enable per
+# host/group with igc_ppsfix_enabled.
+igc_ppsfix_version: "7.0.0-ppsfix.1"  # must match igc-ppsfix/dkms/dkms.conf
+igc_ppsfix_deploy_path: /opt/igc-ppsfix
+
+# ptp-ocp-gnsspps DKMS driver (raw GNSS PPS on the Timecard's kernel PPS
+# device). Grandmaster only; enable with ptp_ocp_gnsspps_enabled.
+ptp_ocp_gnsspps_version: "7.0.0-gnsspps.1"  # must match ptp-ocp-gnsspps/dkms/dkms.conf
+ptp_ocp_gnsspps_deploy_path: /opt/ptp-ocp-gnsspps
+
 # Set to false to stop and remove the monitoring services.
 monitoring_enabled: true

@@ -57,6 +57,14 @@
   notify: Restart monitoring-stack
   when: monitoring_enabled
 
+- name: Deploy Prometheus alert rules.
+  ansible.builtin.template:
+    src: templates/monitoring/prometheus-alerts.yml.j2
+    dest: "{{ monitoring_deploy_path }}/prometheus/alerts.yml"
+    mode: "0644"
+  notify: Restart prometheus
+  when: monitoring_enabled
+
 - name: Deploy Grafana datasource provisioning.
   ansible.builtin.template:
     src: templates/monitoring/grafana-datasources.yml.j2

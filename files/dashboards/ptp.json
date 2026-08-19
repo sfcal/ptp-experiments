@@ -45,7 +45,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "scalar(phc2sys_offset_ns{job=\"node\"}) + ptp4l_offset_from_master_ns{job=\"ptp_clients\"} + phc2sys_offset_ns{job=\"ptp_clients\"}",
+          "expr": "scalar(ts2phc_offset_ns{job=\"node\"}) + ptp4l_offset_from_master_ns{job=\"ptp_clients\"} + (chrony_tracking_last_offset_seconds{job=\"ptp_clients\"} * 1e9)",
           "refId": "A",
           "legendFormat": "{{host}} (signed)"
         },
@@ -54,7 +54,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "scalar(abs(phc2sys_offset_ns{job=\"node\"})) + abs(ptp4l_offset_from_master_ns{job=\"ptp_clients\"}) + abs(phc2sys_offset_ns{job=\"ptp_clients\"})",
+          "expr": "scalar(abs(ts2phc_offset_ns{job=\"node\"})) + abs(ptp4l_offset_from_master_ns{job=\"ptp_clients\"}) + abs((chrony_tracking_last_offset_seconds{job=\"ptp_clients\"} * 1e9))",
           "refId": "B",
           "legendFormat": "{{host}} (worst case)"
         }
@@ -101,7 +101,7 @@
           }
         ]
       },
-      "description": "Per-slave sum of the three sync-chain segments: GM Timecard->NIC (phc2sys) + network (ptp4l offset from master) + slave NIC->system clock (phc2sys). Signed sum is the net error the slave's system clock sees (segments can cancel); the dashed worst-case line sums |segment| values. Gaps appear if the GM collector is down (scalar() needs exactly one GM series)."
+      "description": "Per-slave sum of the three sync-chain segments: GM Timecard->NIC (ts2phc) + network (ptp4l offset from master) + slave NIC->system clock (chrony). Signed sum is the net error the slave's system clock sees (segments can cancel); the dashed worst-case line sums |segment| values. Gaps appear if the GM collector is down (scalar() needs exactly one GM series)."
     },
     {
       "type": "timeseries",
@@ -122,7 +122,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"node\"}",
+          "expr": "ts2phc_offset_ns{job=\"node\"}",
           "refId": "A",
           "legendFormat": "GM: Timecard -> NIC"
         },
@@ -140,7 +140,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"ptp_clients\"}",
+          "expr": "(chrony_tracking_last_offset_seconds{job=\"ptp_clients\"} * 1e9)",
           "refId": "C",
           "legendFormat": "{{host}}: NIC -> system clock"
         }
@@ -172,7 +172,7 @@
     },
     {
       "type": "row",
-      "title": "Grandmaster: Timecard -> NIC (phc2sys)",
+      "title": "Grandmaster: Timecard -> NIC (ts2phc)",
       "gridPos": {
         "x": 0,
         "y": 10,
@@ -184,7 +184,7 @@
     },
     {
       "type": "stat",
-      "title": "phc2sys",
+      "title": "ts2phc",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -192,7 +192,7 @@
       "gridPos": {
         "x": 0,
         "y": 11,
-        "w": 4,
+        "w": 6,
         "h": 4
       },
       "targets": [
@@ -201,7 +201,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_up{job=\"node\"}",
+          "expr": "ts2phc_up{job=\"node\"}",
           "refId": "A"
         }
       ],
@@ -247,9 +247,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 4,
+        "x": 6,
         "y": 11,
-        "w": 5,
+        "w": 6,
         "h": 4
       },
       "targets": [
@@ -258,7 +258,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_servo_state{job=\"node\"}",
+          "expr": "ts2phc_servo_state{job=\"node\"}",
           "refId": "A"
         }
       ],
@@ -312,9 +312,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 9,
+        "x": 12,
         "y": 11,
-        "w": 5,
+        "w": 6,
         "h": 4
       },
       "targets": [
@@ -323,7 +323,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"node\"}",
+          "expr": "ts2phc_offset_ns{job=\"node\"}",
           "refId": "A"
         }
       ],
@@ -355,9 +355,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 14,
+        "x": 18,
         "y": 11,
-        "w": 5,
+        "w": 6,
         "h": 4
       },
       "targets": [
@@ -366,7 +366,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_freq_ppb{job=\"node\"}",
+          "expr": "ts2phc_freq_ppb{job=\"node\"}",
           "refId": "A"
         }
       ],
@@ -391,49 +391,6 @@
       }
     },
     {
-      "type": "stat",
-      "title": "Sync Delay",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 19,
-        "y": 11,
-        "w": 5,
-        "h": 4
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "phc2sys_delay_ns{job=\"node\"}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "justifyMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "ns"
-        },
-        "overrides": []
-      }
-    },
-    {
       "type": "timeseries",
       "title": "NIC PHC Offset from Timecard",
       "datasource": {
@@ -452,7 +409,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"node\"}",
+          "expr": "ts2phc_offset_ns{job=\"node\"}",
           "refId": "A",
           "legendFormat": "Offset"
         }
@@ -480,11 +437,11 @@
         },
         "overrides": []
       },
-      "description": "phc2sys servo on the grandmaster: Timecard PHC (/dev/ptp2) -> NIC PHC (/dev/ptp0)."
+      "description": "ts2phc servo on the grandmaster: Timecard 1PPS -> NIC PHC (/dev/ptp0), hardware edge timestamping."
     },
     {
       "type": "timeseries",
-      "title": "Frequency Adjustment / Sync Delay",
+      "title": "Frequency Adjustment",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -501,18 +458,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_freq_ppb{job=\"node\"}",
+          "expr": "ts2phc_freq_ppb{job=\"node\"}",
           "refId": "A",
           "legendFormat": "Frequency adj."
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "phc2sys_delay_ns{job=\"node\"}",
-          "refId": "B",
-          "legendFormat": "Sync delay"
         }
       ],
       "options": {
@@ -981,7 +929,7 @@
     },
     {
       "type": "row",
-      "title": "Slaves: NIC -> System Clock (phc2sys)",
+      "title": "Slaves: NIC -> System Clock (chrony)",
       "gridPos": {
         "x": 0,
         "y": 36,
@@ -993,7 +941,7 @@
     },
     {
       "type": "stat",
-      "title": "phc2sys",
+      "title": "Sync Daemon",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1010,7 +958,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_up{job=\"ptp_clients\"}",
+          "expr": "chrony_up{job=\"ptp_clients\"}",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1069,7 +1017,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_servo_state{job=\"ptp_clients\"}",
+          "expr": "(chrony_ref_locked{job=\"ptp_clients\"} * 2)",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1136,7 +1084,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"ptp_clients\"}",
+          "expr": "(chrony_tracking_last_offset_seconds{job=\"ptp_clients\"} * 1e9)",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1181,7 +1129,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_freq_ppb{job=\"ptp_clients\"}",
+          "expr": "(chrony_tracking_frequency_ppms{job=\"ptp_clients\"} * 1000)",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1226,7 +1174,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_offset_ns{job=\"ptp_clients\"}",
+          "expr": "(chrony_tracking_last_offset_seconds{job=\"ptp_clients\"} * 1e9)",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1254,7 +1202,7 @@
         },
         "overrides": []
       },
-      "description": "phc2sys servo on each slave: NIC PHC (/dev/ptp0) -> CLOCK_REALTIME."
+      "description": "chrony PHC refclock on each slave: NIC PHC (/dev/ptp0) -> CLOCK_REALTIME."
     },
     {
       "type": "timeseries",
@@ -1275,7 +1223,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "phc2sys_freq_ppb{job=\"ptp_clients\"}",
+          "expr": "(chrony_tracking_frequency_ppms{job=\"ptp_clients\"} * 1000)",
           "refId": "A",
           "legendFormat": "{{host}}"
         }
@@ -1335,7 +1283,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_stratum",
+          "expr": "chrony_tracking_stratum{job=\"chrony\"}",
           "refId": "A"
         }
       ],
@@ -1463,7 +1411,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_frequency_ppms",
+          "expr": "chrony_tracking_frequency_ppms{job=\"chrony\"}",
           "refId": "A"
         }
       ],
@@ -1507,7 +1455,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_root_dispersion_seconds",
+          "expr": "chrony_tracking_root_dispersion_seconds{job=\"chrony\"}",
           "refId": "A"
         }
       ],
@@ -1607,7 +1555,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_last_offset_seconds",
+          "expr": "chrony_tracking_last_offset_seconds{job=\"chrony\"}",
           "refId": "A",
           "legendFormat": "Last offset"
         },
@@ -1616,7 +1564,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_rms_offset_seconds",
+          "expr": "chrony_tracking_rms_offset_seconds{job=\"chrony\"}",
           "refId": "B",
           "legendFormat": "RMS offset"
         }
@@ -1664,7 +1612,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_frequency_ppms",
+          "expr": "chrony_tracking_frequency_ppms{job=\"chrony\"}",
           "refId": "A",
           "legendFormat": "Frequency"
         },
@@ -1673,7 +1621,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_residual_frequency_ppms",
+          "expr": "chrony_tracking_residual_frequency_ppms{job=\"chrony\"}",
           "refId": "B",
           "legendFormat": "Residual"
         }
@@ -1721,7 +1669,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_root_delay_seconds",
+          "expr": "chrony_tracking_root_delay_seconds{job=\"chrony\"}",
           "refId": "A",
           "legendFormat": "Root delay"
         },
@@ -1730,7 +1678,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "chrony_tracking_root_dispersion_seconds",
+          "expr": "chrony_tracking_root_dispersion_seconds{job=\"chrony\"}",
           "refId": "B",
           "legendFormat": "Root dispersion"
         }

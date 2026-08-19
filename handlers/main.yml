@@ -32,26 +32,25 @@
     state: restarted
     daemon-reload: true
     
-# The ts2phc unit only exists on the grandmaster. 'restarted' would START a
-# stopped service, so both sync handlers are gated on nic_sync_method to
-# avoid resurrecting the deselected daemon (two writers on /dev/ptp0).
+# The ts2phc unit only exists on the grandmaster.
 - name: Restart ts2phc
   ansible.builtin.systemd_service:
     name: ts2phc
     state: restarted
     daemon-reload: true
-  when: ptp_role == 'grandmaster' and nic_sync_method | default('phc2sys') == 'ts2phc'
-
-# Clients have no nic_sync_method and always run phc2sys.
-- name: Restart phc2sys
-  ansible.builtin.systemd_service:
-    name: phc2sys
-    state: restarted
-    daemon-reload: true
-  when: ptp_role != 'grandmaster' or nic_sync_method | default('phc2sys') == 'phc2sys'
+  when: ptp_role == 'grandmaster'
 
 - name: Restart monitoring-stack
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_deploy_path }}"
+    state: restarted
+  when: monitoring_enabled
+
+# Rule-file changes only need Prometheus bounced, not the whole stack.
+- name: Restart prometheus
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_deploy_path }}"
+    services:
+      - prometheus
     state: restarted
   when: monitoring_enabled

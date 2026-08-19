@@ -1,10 +1,4 @@
 ---
-- name: Validate NIC sync method.
-  ansible.builtin.assert:
-    that: nic_sync_method in ['ts2phc', 'phc2sys']
-    fail_msg: "nic_sync_method must be 'ts2phc' or 'phc2sys'"
-  when: ptp_role == 'grandmaster'
-
 - name: Install linuxptp build requirements.
   ansible.builtin.apt:
     name:
@@ -27,7 +21,6 @@
   notify:
     - Restart ptp4l
     - Restart ts2phc
-    - Restart phc2sys
 
 - name: Copy ts2phc systemd unit file into place.
   ansible.builtin.template:
@@ -46,20 +39,17 @@
     enabled: "{{ ts2phc_service_enabled }}"
   when: ptp_role == 'grandmaster'
 
-- name: Copy phc2sys systemd unit file into place.
-  ansible.builtin.template:
-    src: templates/ptp/phc2sys.service.j2
-    dest: /etc/systemd/system/phc2sys.service
-    owner: root
-    group: root
-    mode: 0755
-  notify: Restart phc2sys
-
-- name: Ensure phc2sys service is in the correct state.
-  ansible.builtin.service:
+- name: Remove any legacy phc2sys service.
+  ansible.builtin.systemd_service:
     name: phc2sys
-    state: "{{ phc2sys_service_state }}"
-    enabled: "{{ phc2sys_service_enabled }}"
+    state: stopped
+    enabled: false
+  failed_when: false  # unit absent on freshly provisioned hosts
+
+- name: Remove legacy phc2sys unit file.
+  ansible.builtin.file:
+    path: /etc/systemd/system/phc2sys.service
+    state: absent
 
 - name: Ensure /etc/linuxptp exists.
   ansible.builtin.file:

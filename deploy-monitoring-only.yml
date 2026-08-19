@@ -1,0 +1,15 @@
+---
+# Scoped deploy: monitoring stack only (metrics script, alert rules,
+# Prometheus/Grafana). Used when the full deploy.yml would fight an
+# in-progress incident recovery (e.g. ts2phc held stopped by hand).
+- name: Deploy monitoring only
+  hosts: ptp_server
+  become: true
+
+  handlers:
+    - name: Include various service handlers.
+      ansible.builtin.import_tasks: handlers/main.yml
+
+  tasks:
+    - name: Configure monitoring.
+      ansible.builtin.include_tasks: tasks/monitoring.yml

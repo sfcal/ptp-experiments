@@ -1,0 +1,16 @@
+# Marimo notebook session cache (generated, large)
+analysis/__marimo__/
+
+# Python
+__pycache__/
+*.pyc
+
+# Ansible
+*.retry
+collections/
+
+# Claude Code local state
+.claude/
+
+# macOS
+.DS_Store

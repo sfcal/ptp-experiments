@@ -1,6 +1,6 @@
 ---
 # PTP clients (Raspberry Pi): ptp4l disciplines the NIC PHC from the
-# grandmaster, phc2sys steers the system clock from the PHC.
+# grandmaster, chrony steers the system clock from the PHC refclock.
 ptp_role: slave
 
 network_interface: "eth0"
@@ -8,14 +8,13 @@ network_interface: "eth0"
 ptp4l_service_state: started
 ptp4l_service_enabled: true
 
-# -w waits for ptp4l to lock and picks up the UTC-TAI offset from it,
-# so no -O here. No --transportSpecific either: it must match ptp4l's
-# transportSpecific (default 0) or the -w management queries hang.
-phc2sys_service_state: started
-phc2sys_service_enabled: true
-phc2sys_source: '/dev/ptp0'
-phc2sys_clock: 'CLOCK_REALTIME'
-phc2sys_extra_opts: '-w -m'
+# chrony's median-filtered PHC refclock disciplines CLOCK_REALTIME. The
+# filtering wins on every read path we measured (2026-08-04): ~8 ns rms on
+# the i226's fast PCIe reads, and still ~63 ns rms on the Pi 5 onboard PHY
+# whose PHC sits behind ~214 us MDIO reads.
+# PHC holds TAI; 'tai' converts via the leapseclist already present in
+# Ubuntu's base chrony.conf. dpoll -4 = 16 reads/s, median-filtered.
+chrony_client_refclock: "refclock PHC /dev/ptp0 poll 0 dpoll -4 refid PHC tai prefer"
 
 # apt prometheus-node-exporter's textfile collector directory.
 ptp_metrics_textfile_dir: /var/lib/prometheus/node-exporter

@@ -1,0 +1,13 @@
+# Stable device path for the OCP Timecard PHC. /dev/ptpN numbering depends
+# on driver probe order and changes when NICs are added/removed (seen
+# 2026-08-04: a NIC swap moved the Timecard from ptp2 to ptp1 and pointed
+# chrony/ts2phc at a Realtek NIC's PHC). Everything references
+# /dev/ptp-timecard instead.
+SUBSYSTEM=="ptp", ATTR{clock_name}=="ptp_ocp", SYMLINK+="ptp-timecard"
+
+# Same for the Timecard's kernel PPS device (consumed by gpsd; with the
+# ptp-ocp-gnsspps module it carries the raw GNSS 1PPS). PPS class devices
+# register under virtual/pps (no PCI parent to match a driver on), but their
+# name attr is the owning PHC ("ptpN") -- cross-reference it to the ptp node
+# whose clock_name is ptp_ocp. dialout so the gpsd user can open it.
+SUBSYSTEM=="pps", PROGRAM=="/bin/sh -c 'grep -q ptp_ocp /sys/class/ptp/$attr{name}/clock_name'", SYMLINK+="pps-timecard", GROUP="dialout", MODE="0660"
