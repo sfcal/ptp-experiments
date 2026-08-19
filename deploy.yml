@@ -35,15 +35,40 @@
         name: chrony
       tags: [chrony]
 
-    - name: Install igc-ppsfix DKMS driver.
-      ansible.builtin.import_tasks: tasks/igc-ppsfix.yml
+    - name: Install igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/).
+      ansible.builtin.import_role:
+        name: dkms_module
       when: igc_ppsfix_enabled | default(false)
       tags: [dkms]
+      vars:
+        dkms_name: igc
+        dkms_display: igc-ppsfix
+        dkms_version: "{{ igc_ppsfix_version }}"
+        dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
+        dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
+        dkms_reboot_pkg: igc-ppsfix-dkms
+        dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
+        dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
-    - name: Install ptp-ocp-gnsspps DKMS driver.
-      ansible.builtin.import_tasks: tasks/ptp-ocp-gnsspps.yml
+    - name: Install ptp-ocp-gnsspps DKMS driver (raw GNSS PPS, see ptp-ocp-gnsspps/).
+      ansible.builtin.import_role:
+        name: dkms_module
       when: ptp_ocp_gnsspps_enabled | default(false)
       tags: [dkms]
+      vars:
+        dkms_name: ptp_ocp
+        dkms_display: ptp-ocp-gnsspps
+        dkms_version: "{{ ptp_ocp_gnsspps_version }}"
+        dkms_src: "{{ playbook_dir }}/ptp-ocp-gnsspps/dkms/"
+        dkms_deploy_path: "{{ ptp_ocp_gnsspps_deploy_path }}"
+        dkms_reboot_pkg: ptp-ocp-gnsspps-dkms
+        dkms_modinfo_asserts: ['/updates/', 'gnss_pps']
+        dkms_modprobe_conf_name: ptp_ocp-gnsspps.conf
+        dkms_modprobe_conf: |
+          # Managed by Ansible (roles/dkms_module). Feed the Time Card's
+          # kernel PPS device from the raw GNSS 1PPS timestamper (ts0).
+          options ptp_ocp gnss_pps=1
+        dkms_auto_reboot: "{{ ptp_ocp_gnsspps_auto_reboot | default(false) }}"
 
     - name: Build linuxptp from source.
       ansible.builtin.import_role:
@@ -88,9 +113,19 @@
       tags: [network]
 
     - name: Install igc-ppsfix DKMS driver (i226 clients).
-      ansible.builtin.import_tasks: tasks/igc-ppsfix.yml
+      ansible.builtin.import_role:
+        name: dkms_module
       when: igc_ppsfix_enabled | default(false)
       tags: [dkms]
+      vars:
+        dkms_name: igc
+        dkms_display: igc-ppsfix
+        dkms_version: "{{ igc_ppsfix_version }}"
+        dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
+        dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
+        dkms_reboot_pkg: igc-ppsfix-dkms
+        dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
+        dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
     - name: Build linuxptp from source.
       ansible.builtin.import_role:

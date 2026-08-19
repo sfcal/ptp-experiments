@@ -1,0 +1,138 @@
+---
+# Install a patched kernel module via DKMS. The module is only installed on
+# disk -- it is loaded at the next reboot. Never reload modules live here:
+# the igc NIC carries the SSH session, and chrony/ts2phc/gpsd hold the Time
+# Card open. Ansible flags /run/reboot-required instead; set the module's
+# *_auto_reboot variable to let Ansible reboot.
+
+- name: "Install DKMS build prerequisites."
+  ansible.builtin.apt:
+    name:
+      - dkms
+      - "linux-headers-{{ ansible_kernel }}"
+    state: present
+
+- name: "Copy {{ dkms_display }} DKMS source tree."
+  ansible.builtin.copy:
+    src: "{{ dkms_src }}"
+    dest: "{{ dkms_deploy_path }}/"
+    owner: root
+    group: root
+    mode: preserve
+  register: dkms_src_copy
+
+- name: "Configure {{ dkms_name }} module options."
+  ansible.builtin.copy:
+    dest: "/etc/modprobe.d/{{ dkms_modprobe_conf_name }}"
+    content: "{{ dkms_modprobe_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: dkms_modprobe_conf | length > 0
+
+- name: "Check current DKMS state for {{ dkms_name }}."
+  ansible.builtin.command:
+    cmd: dkms status {{ dkms_name }}/{{ dkms_version }}
+  register: dkms_mod_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "Remove stale DKMS module after source change."
+  ansible.builtin.command:
+    cmd: dkms remove {{ dkms_name }}/{{ dkms_version }} --all
+  when:
+    - dkms_src_copy.changed
+    - dkms_version in dkms_mod_status.stdout | default('')
+
+- name: "Register {{ dkms_display }} with DKMS."
+  ansible.builtin.command:
+    cmd: dkms add {{ dkms_deploy_path }}
+    creates: /var/lib/dkms/{{ dkms_name }}/{{ dkms_version }}/source
+
+# dkms install builds first if needed, so no separate build step.
+- name: "Build and install {{ dkms_display }} for the running kernel."
+  ansible.builtin.command:
+    cmd: dkms install --force {{ dkms_name }}/{{ dkms_version }} -k {{ ansible_kernel }}
+  register: dkms_mod_install
+  when: >-
+    dkms_src_copy.changed
+    or 'installed' not in dkms_mod_status.stdout | default('')
+
+- name: "Refresh module dependencies."
+  ansible.builtin.command:
+    cmd: depmod -a
+  when: dkms_mod_install.changed
+
+- name: "Rebuild initramfs so the DKMS {{ dkms_name }} is used from early boot."
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k {{ ansible_kernel }}
+  when: dkms_mod_install.changed
+
+- name: "Inspect on-disk {{ dkms_name }} module."
+  ansible.builtin.command:
+    cmd: modinfo {{ dkms_name }}
+  register: dkms_modinfo
+  changed_when: false
+  check_mode: false
+
+- name: "Assert the DKMS {{ dkms_name }} is the module depmod will load."
+  ansible.builtin.assert:
+    that:
+      - item in dkms_modinfo.stdout
+    fail_msg: "modinfo {{ dkms_name }} does not show the DKMS {{ dkms_display }} module; check dkms status."
+  loop: "{{ dkms_modinfo_asserts }}"
+  when: not ansible_check_mode
+
+- name: "Read srcversion of the on-disk {{ dkms_name }} module."
+  ansible.builtin.command:
+    cmd: modinfo -F srcversion {{ dkms_name }}
+  register: dkms_disk_srcver
+  changed_when: false
+  check_mode: false
+
+- name: "Read srcversion of the loaded {{ dkms_name }} module."
+  ansible.builtin.slurp:
+    src: /sys/module/{{ dkms_name }}/srcversion
+  register: dkms_live_srcver
+  failed_when: false
+
+- name: "Determine whether a reboot is needed to load {{ dkms_display }}."
+  ansible.builtin.set_fact:
+    dkms_reboot_required: >-
+      {{ dkms_live_srcver.content is defined and
+         (dkms_live_srcver.content | b64decode | trim)
+         != (dkms_disk_srcver.stdout | trim) }}
+
+# /run is tmpfs, so both flags self-clear on reboot.
+- name: "Flag reboot required (Ubuntu convention)."
+  ansible.builtin.lineinfile:
+    path: /run/reboot-required.pkgs
+    line: "{{ dkms_reboot_pkg }}"
+    create: true
+    mode: "0644"
+  when: dkms_reboot_required
+
+- name: "Ensure /run/reboot-required exists."
+  ansible.builtin.copy:
+    dest: /run/reboot-required
+    content: "*** System restart required ***\n"
+    mode: "0644"
+  when: dkms_reboot_required
+
+- name: "Warn that the running {{ dkms_name }} is not the {{ dkms_display }} build."
+  ansible.builtin.debug:
+    msg: >-
+      {{ dkms_display }} is installed on disk but the RUNNING {{ dkms_name }}
+      module is still the stock driver. Reboot this host to load it (do NOT
+      reload the module live: the igc NIC carries the SSH session, and
+      chrony/ts2phc/gpsd hold the Time Card open). Set the module's
+      *_auto_reboot variable to true to let Ansible reboot instead.
+  when: dkms_reboot_required
+
+- name: "Reboot to load {{ dkms_display }} (opt-in)."
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - dkms_reboot_required
+    - dkms_auto_reboot | default(false)

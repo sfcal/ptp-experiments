@@ -1,0 +1,13 @@
+---
+# Parameterized DKMS module install. Invoked per module from deploy.yml with:
+#   dkms_name            kernel module name (igc, ptp_ocp)
+#   dkms_display         human name for messages (igc-ppsfix, ptp-ocp-gnsspps)
+#   dkms_version         DKMS version string (must match dkms.conf)
+#   dkms_src             source tree to copy (e.g. "{{ playbook_dir }}/igc-ppsfix/dkms/")
+#   dkms_deploy_path     where the source lands on the host
+#   dkms_reboot_pkg      package name written to /run/reboot-required.pkgs
+#   dkms_modinfo_asserts strings that must appear in `modinfo <module>`
+# Optional:
+dkms_modprobe_conf: ""        # content for a modprobe.d drop-in ('' = none)
+dkms_modprobe_conf_name: "{{ dkms_name }}.conf"
+dkms_auto_reboot: false       # opt-in: let Ansible reboot when a new build is staged
