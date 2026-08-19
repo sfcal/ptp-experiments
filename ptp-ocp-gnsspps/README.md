@@ -1,23 +1,49 @@
-# ptp_ocp GNSS PPS fix for the OCP Time Card
+# ptp_ocp driver for the OCP Time Card (TAP PTM driver + GNSS PPS patch)
 
-Driver change for the grandmaster so the Time Card's kernel PPS device
-(`/dev/ppsN`, symlinked to `/dev/pps-timecard` by `files/timecard-ptp.rules`)
-carries the **raw GNSS receiver 1PPS** instead of the disciplined FPGA PPS.
-gpsd consumes that device (RFC 2783), which lights up the PPS panels of the
-gpsd-prometheus-exporter Grafana dashboard with true receiver-pulse semantics:
+The grandmaster's Time Card runs a **PTM FPGA image**, and the stock in-tree
+`ptp_ocp` driver cannot drive it: every fabric register reads all-ones
+(`Version 255.255.65535`, devlink `fw 255.32767`), EEPROM reads fail, SMA
+sysfs writes return EOPNOTSUPP — and loading it deterministically wedges udev
+(a udev-worker hangs D-state in the spi-nor probe holding a mutex; only a
+reboot clears it). This looks exactly like dead hardware and was misdiagnosed
+as such twice (2026-08-14 and 2026-08-19).
+
+`dkms/src/ptp_ocp.c` is therefore the **Time-Appliances-Project driver**
+(`Time-Card` repo `DRV/Linux`, commit `1042bd6f`) with three local changes:
+
+1. `patches/tap-ptm-compat-7.0.patch` — two build fixes for the 7.0 kernel:
+   a `RHEL_RELEASE_CODE`/`RHEL_RELEASE_VERSION` stub (the repo's compat
+   guards are a hard preprocessor error on non-RHEL kernels), and the
+   two-arg `pci_enable_ptm(bp->pdev, NULL)` form.
+2. `patches/gnsspps-on-tap-driver.patch` — the `gnss_pps` raw-PPS parameter
+   (below), ported from the old mainline-based build.
+
+**Installation is automated** by the `dkms_module` role in `deploy.yml`
+(gated by `ptp_ocp_gnsspps_enabled`): DKMS install, initramfs rebuild, and
+`/run/reboot-required` when the running module differs — plus two pieces
+specific to this module:
+
+- `blacklist ptp_ocp` in `/etc/modprobe.d/ptp_ocp-gnsspps.conf`: the stock
+  driver must never autoload against the PTM image.
+- `ptp_ocp-load.service`: loads the module explicitly at boot, ordered
+  before timecard-sma/chrony/gpsd/ts2phc/ptp4l — and refuses (harmlessly)
+  if the on-disk module would resolve to the stock driver, e.g. in a
+  kernel-upgrade window before DKMS has rebuilt.
+
+Known limitation: under the PTM image the FPGA's SPI NOR never probes (the
+flash IRQ appears unserviced), so `devlink dev flash` does not work and MTD
+is absent. Do not unbind/rebind `spi-nor` on `spi2048.0` to retry — it only
+adds D-state tasks. Reflashing the card is a JTAG job.
+
+## The gnss_pps patch
+
+Makes the Time Card's kernel PPS device (`/dev/ppsN`, symlinked to
+`/dev/pps-timecard` by the timecard role's udev rules) carry the **raw GNSS
+receiver 1PPS** instead of the disciplined FPGA PPS. gpsd consumes that
+device (RFC 2783), which lights up the PPS panels of the
+gpsd-prometheus-exporter dashboard with true receiver-pulse semantics:
 asserts stop when the receiver stops pulsing, instead of free-running on the
 disciplined clock through a GNSS outage.
-
-**Installation is automated** by `tasks/ptp-ocp-gnsspps.yml` in the main
-deployment (gated by `ptp_ocp_gnsspps_enabled` in `group_vars/ptp_server.yml`):
-Ansible copies `dkms/` to `/opt/ptp-ocp-gnsspps`, runs `dkms add`/`dkms install`
-for the running kernel, ships `/etc/modprobe.d/ptp_ocp-gnsspps.conf`
-(`options ptp_ocp gnss_pps=1`), rebuilds the initramfs, and flags
-`/run/reboot-required` when the running module differs from the installed one.
-It follows the igc-ppsfix convention of never reloading the module live —
-chrony, ts2phc and gpsd all hold the Time Card open — though unlike igc a
-manual reload is *possible* (ptp_ocp does not carry the SSH session): stop
-chrony/ts2phc/gpsd, `modprobe -r ptp_ocp && modprobe ptp_ocp`, start them again.
 
 ## Why the stock driver can't do this
 
@@ -35,7 +61,7 @@ The stock `ptp_ocp` has two disjoint kernel paths for the two pulses:
 Both timestampers share the same IRQ handler and enable function — the driver
 simply never emits the PPS event type from `ts0`. That is the whole fix.
 
-## The change (see `patches/ptp-ocp-gnsspps-7.0.patch`)
+## The change (see `patches/gnsspps-on-tap-driver.patch`)
 
 A `gnss_pps` module parameter (bool, default 0 = stock behavior) and a
 `ptp_ocp_pps_source(bp)` helper returning `bp->ts0` when set, `bp->pps`
@@ -59,11 +85,9 @@ Unchanged on purpose:
 - ts2phc/ptp4l/chrony are unaffected: nothing in that chain uses the kernel
   PPS device.
 
-`dkms/src/ptp_ocp.c` is the clean v7.0 mainline source with the patch applied
-(same convention as igc-ppsfix). PPS events only flow after `PTP_ENABLE_PPS`
-is issued on the PHC — `templates/timecard/timecard-sma.sh.j2` does that at
-boot (gated by `timecard_kernel_pps`); the request persists until the module
-unloads.
+PPS events only flow after `PTP_ENABLE_PPS` is issued on the PHC —
+`roles/timecard/templates/timecard-sma.sh.j2` does that at boot (gated by
+`timecard_kernel_pps`); the request persists until the module unloads.
 
 ## Behavior notes
 

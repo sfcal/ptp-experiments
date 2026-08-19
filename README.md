@@ -79,9 +79,12 @@ reboots per host with `igc_ppsfix_auto_reboot` / `ptp_ocp_gnsspps_auto_reboot`.
 
 - **igc-ppsfix** — i226 EXTTS/PEROUT fixes; required for ts2phc on the
   TimeNIC. GM + client .12.
-- **ptp-ocp-gnsspps** — routes the Timecard's kernel PPS device from the raw
-  GNSS timestamper instead of the disciplined FPGA PPS (monitoring fidelity
-  only). GM only.
+- **ptp-ocp-gnsspps** — the TAP PTM-capable `ptp_ocp` plus the raw-GNSS-PPS
+  patch. **Required**: the Time Card runs a PTM FPGA image the stock in-tree
+  driver cannot drive (all-ones registers, wedged udev — looks exactly like
+  dead hardware). Stock `ptp_ocp` is blacklisted; `ptp_ocp-load.service`
+  loads the DKMS build at boot and refuses to load a stock module. GM only.
+  See `ptp-ocp-gnsspps/README.md`, including the devlink-flash/SPI caveat.
 
 After a kernel upgrade, check that the *running* modules match the on-disk
 DKMS builds (the deploy warns when they don't): a reboot that regenerates

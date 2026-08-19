@@ -1,6 +1,6 @@
---- a/drivers/ptp/ptp_ocp.c
-+++ b/drivers/ptp/ptp_ocp.c
-@@ -1369,6 +1369,22 @@
+--- a/DRV/Linux/ptp_ocp.c
++++ b/DRV/Linux/ptp_ocp.c
+@@ -2021,6 +2021,22 @@
  ptp_ocp_null_adjphase(struct ptp_clock_info *ptp_info, s32 phase_ns)
  {
  	return -EOPNOTSUPP;
@@ -22,8 +22,8 @@
 +	return gnss_pps ? bp->ts0 : bp->pps;
  }
  
- static int
-@@ -1406,7 +1422,7 @@
+ #ifdef CONFIG_PCIE_PTM
+@@ -2152,7 +2168,7 @@
  		break;
  	case PTP_CLK_REQ_PPS:
  		req = OCP_REQ_PPS;
@@ -32,7 +32,7 @@
  		break;
  	case PTP_CLK_REQ_PEROUT:
  		switch (rq->perout.index) {
-@@ -2165,7 +2181,7 @@
+@@ -3092,7 +3108,7 @@
  	struct ptp_clock_event ev;
  	u32 sec, nsec;
  
@@ -41,9 +41,9 @@
  		if (ext->bp->pps_req_map & OCP_REQ_PPS) {
  			ev.type = PTP_CLOCK_PPS;
  			ptp_clock_event(ext->bp->ptp, &ev);
-@@ -2198,7 +2214,7 @@
- 	struct ts_reg __iomem *reg = ext->mem;
+@@ -3127,7 +3143,7 @@
  	struct ptp_ocp *bp = ext->bp;
+ 	u32 val;
  
 -	if (ext == bp->pps) {
 +	if (ext == ptp_ocp_pps_source(bp)) {

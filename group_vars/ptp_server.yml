@@ -25,10 +25,11 @@ gpsd_options: "-s {{ gpsd_baud }} -n"
 igc_ppsfix_enabled: true
 igc_ppsfix_auto_reboot: false  # opt-in: let Ansible reboot when a new build is staged
 
-# ptp-ocp-gnsspps DKMS driver (raw GNSS PPS on the Timecard kernel PPS device,
-# see ptp-ocp-gnsspps/README.md). Same conventions as igc-ppsfix: installed on
-# disk only, loads at the next reboot, /run/reboot-required flagged. Until the
-# reboot, /dev/pps-timecard carries the disciplined FPGA PPS (stock driver).
+# ptp-ocp-gnsspps DKMS driver: the TAP PTM-capable ptp_ocp + raw GNSS PPS
+# patch (see ptp-ocp-gnsspps/README.md). REQUIRED on this card -- its FPGA
+# runs a PTM image the stock in-tree driver cannot drive (all-ones
+# registers, wedged udev). Stock ptp_ocp is blacklisted; ptp_ocp-load.service
+# loads the DKMS build at boot. Same reboot conventions as igc-ppsfix.
 ptp_ocp_gnsspps_enabled: true
 ptp_ocp_gnsspps_auto_reboot: false
 

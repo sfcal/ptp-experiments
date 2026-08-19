@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Load the DKMS {{ dkms_name }} module ({{ dkms_display }})
+# The stock {{ dkms_name }} is blacklisted (it must never bind to this
+# hardware), so the module is loaded explicitly here -- and only when the
+# module modprobe would resolve is the DKMS build. During a kernel-upgrade
+# window where only the stock module exists, this refuses (exit 0) and the
+# dependent services degrade instead of wedging the system.
+{% if dkms_load_before %}
+Before={{ dkms_load_before | join(' ') }}
+{% endif %}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'if modinfo -n {{ dkms_name }} | grep -q "/updates/"; then modprobe {{ dkms_name }}; else echo "on-disk {{ dkms_name }} is the stock driver; refusing to load (rebuild DKMS for this kernel)"; fi'
+
+[Install]
+WantedBy=multi-user.target

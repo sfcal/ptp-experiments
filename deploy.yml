@@ -56,7 +56,7 @@
         dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
         dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
-    - name: Install ptp-ocp-gnsspps DKMS driver (raw GNSS PPS, see ptp-ocp-gnsspps/).
+    - name: Install ptp-ocp-gnsspps DKMS driver (TAP PTM driver + raw GNSS PPS, see ptp-ocp-gnsspps/).
       ansible.builtin.import_role:
         name: dkms_module
       when: ptp_ocp_gnsspps_enabled | default(false)
@@ -71,9 +71,30 @@
         dkms_modinfo_asserts: ['/updates/', 'gnss_pps']
         dkms_modprobe_conf_name: ptp_ocp-gnsspps.conf
         dkms_modprobe_conf: |
-          # Managed by Ansible (roles/dkms_module). Feed the Time Card's
-          # kernel PPS device from the raw GNSS 1PPS timestamper (ts0).
+          # Managed by Ansible (roles/dkms_module).
+          # The card runs a PTM FPGA image; the stock in-tree ptp_ocp cannot
+          # drive it (all-ones registers, wedges udev via a D-state spi-nor
+          # probe). Blacklist stops any alias autoload; ptp_ocp-load.service
+          # loads the DKMS build explicitly at boot.
+          blacklist ptp_ocp
+          # Under the PTM image the FPGA's SPI flash never answers: the
+          # spi-nor JEDEC-ID probe hangs a udev worker in D-state, and udev
+          # then serializes ALL events for the Time Card's PCI device behind
+          # it -- /dev/ptp-timecard is never created and chrony/timecard-sma
+          # fail. devlink flash is unusable under PTM regardless (reflashing
+          # is a JTAG job), so keep the flash driver off entirely.
+          blacklist spi_nor
+          # Feed the Time Card's kernel PPS device from the raw GNSS 1PPS
+          # timestamper (ts0).
           options ptp_ocp gnss_pps=1
+        dkms_load_service: true
+        dkms_load_before:
+          - timecard-sma.service
+          - chrony.service
+          - gpsd.service
+          - ts2phc.service
+          - phc2sys.service
+          - ptp4l.service
         dkms_auto_reboot: "{{ ptp_ocp_gnsspps_auto_reboot | default(false) }}"
 
     - name: Build linuxptp from source.

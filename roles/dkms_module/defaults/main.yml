@@ -11,3 +11,8 @@
 dkms_modprobe_conf: ""        # content for a modprobe.d drop-in ('' = none)
 dkms_modprobe_conf_name: "{{ dkms_name }}.conf"
 dkms_auto_reboot: false       # opt-in: let Ansible reboot when a new build is staged
+# When the stock module is blacklisted (because it must never bind), deploy
+# a boot unit that loads the module explicitly -- and only when the on-disk
+# module modprobe resolves is the DKMS build, never the stock driver.
+dkms_load_service: false
+dkms_load_before: []          # units that need the module's devices present

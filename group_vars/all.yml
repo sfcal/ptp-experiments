@@ -22,9 +22,11 @@ linuxptp_sbin: /usr/local/sbin
 igc_ppsfix_version: "7.0.0-ppsfix.1"  # must match igc-ppsfix/dkms/dkms.conf
 igc_ppsfix_deploy_path: /opt/igc-ppsfix
 
-# ptp-ocp-gnsspps DKMS driver (raw GNSS PPS on the Timecard's kernel PPS
-# device). Grandmaster only; enable with ptp_ocp_gnsspps_enabled.
-ptp_ocp_gnsspps_version: "7.0.0-gnsspps.1"  # must match ptp-ocp-gnsspps/dkms/dkms.conf
+# ptp-ocp-gnsspps DKMS driver: the Time-Appliances-Project PTM-capable
+# ptp_ocp (the card runs a PTM FPGA image the mainline driver cannot drive
+# -- it wedges udev), plus the gnss_pps raw-PPS patch. Grandmaster only;
+# enable with ptp_ocp_gnsspps_enabled. Version = TAP repo commit + patch rev.
+ptp_ocp_gnsspps_version: "tap-1042bd6f-gnsspps.1"  # must match ptp-ocp-gnsspps/dkms/dkms.conf
 ptp_ocp_gnsspps_deploy_path: /opt/ptp-ocp-gnsspps
 
 # Set to false to stop and remove the monitoring services.

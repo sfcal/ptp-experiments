@@ -30,6 +30,24 @@
     mode: "0644"
   when: dkms_modprobe_conf | length > 0
 
+- name: "Deploy explicit load unit for {{ dkms_name }}."
+  ansible.builtin.template:
+    src: dkms-load.service.j2
+    dest: "/etc/systemd/system/{{ dkms_name }}-load.service"
+    owner: root
+    group: root
+    mode: "0644"
+  when: dkms_load_service
+
+- name: "Enable explicit load unit for {{ dkms_name }}."
+  ansible.builtin.systemd_service:
+    name: "{{ dkms_name }}-load.service"
+    enabled: true
+    daemon_reload: true
+  when: dkms_load_service
+  # In --check on a fresh host the unit file hasn't been written yet.
+  ignore_errors: "{{ ansible_check_mode }}"
+
 - name: "Check current DKMS state for {{ dkms_name }}."
   ansible.builtin.command:
     cmd: dkms status {{ dkms_name }}/{{ dkms_version }}
