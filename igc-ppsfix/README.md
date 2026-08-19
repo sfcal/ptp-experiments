@@ -5,7 +5,7 @@ the Timecard's 1PPS with hardware edge timestamping instead of a software
 PHC-to-PHC copy through the system clock's oscillator.
 
 **Route A is automated** by `tasks/igc-ppsfix.yml` in the main deployment
-(gated by `igc_ppsfix_enabled` in `group_vars/time.yml`): Ansible copies
+(gated by `igc_ppsfix_enabled` in `group_vars/ptp_server.yml` / `host_vars`): Ansible copies
 `dkms/` to `/opt/igc-ppsfix`, runs `dkms add`/`dkms install` for the running
 kernel, rebuilds the initramfs, and flags `/run/reboot-required` when the
 running module differs from the installed one. It never reloads the module

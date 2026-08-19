@@ -17,18 +17,3 @@
     name: ts2phc
     state: "{{ ts2phc_service_state }}"
     enabled: "{{ ts2phc_service_enabled }}"
-
-# Transitional: phc2sys used to steer the system clock before chrony's PHC
-# refclock replaced it. Remove once the fleet is known clean (and before the
-# phc2sys pipeline profile reuses this unit name).
-- name: Remove any legacy phc2sys service.
-  ansible.builtin.systemd_service:
-    name: phc2sys
-    state: stopped
-    enabled: false
-  failed_when: false  # unit absent on freshly provisioned hosts
-
-- name: Remove legacy phc2sys unit file.
-  ansible.builtin.file:
-    path: /etc/systemd/system/phc2sys.service
-    state: absent

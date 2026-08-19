@@ -57,7 +57,7 @@ groups:
           severity: critical
         annotations:
           summary: "Timecard PHC refclock (AC) is unreachable"
-          description: "chronyd is not getting samples from /dev/ptp2; see dmesg for PTM/ptp_ocp errors."
+          description: "chronyd is not getting samples from /dev/ptp-timecard; see dmesg for PTM/ptp_ocp errors."
 
       - alert: ChronySkewHigh
         expr: chrony_tracking_skew_ppms{job="chrony"} > 1
