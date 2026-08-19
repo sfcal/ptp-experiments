@@ -4,6 +4,10 @@ ptp_role: grandmaster
 
 network_interface: "enp1s0"
 
+# Driver owning the PHC that ptp4l serves on the TimeNIC (udev DRIVERS
+# match for the /dev/ptp-nic symlink).
+nic_phc_driver: igc
+
 # GPSd configuration. /dev/pps-timecard is the Timecard's kernel PPS device
 # (udev symlink, files/timecard-ptp.rules); with the ptp-ocp-gnsspps DKMS
 # module loaded it carries the raw GNSS receiver 1PPS, which gpsd pairs with
@@ -68,10 +72,10 @@ chrony_refclock: |
   refclock PHC /dev/ptp-timecard:nocrossts poll 0 refid AC precision 1e-9 tai prefer
 
   # Uncomment to use NIC's PHC as time source.
-  # refclock PHC /dev/ptp0 poll 0 dpoll -5 tai  # Use NIC's PHC
+  # refclock PHC /dev/ptp-nic poll 0 dpoll -5 tai  # Use NIC's PHC
 
   # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
-  refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
+  refclock PHC /dev/ptp-nic poll 0 dpoll -5 tai noselect refid NIC
 
   # Uncomment to use GPS module directly as time source.
   #refclock SHM 0 refid NMEA precision 1e-3 poll 0 filter 3
@@ -133,7 +137,7 @@ ptp4l_conf_extra: |
 ts2phc_service_state: started
 ts2phc_service_enabled: true
 ts2phc_logging_level: 7
-ts2phc_clock: '/dev/ptp0'  # NIC PHC, disciplined by the Timecard's PPS
+ts2phc_clock: '/dev/ptp-nic'  # NIC PHC, disciplined by the Timecard's PPS
 ts2phc_source: 'generic'
 ts2phc_pin_index: 1  # TimeNIC SDP1 = PPS IN
 ts2phc_extra_opts: '-m'

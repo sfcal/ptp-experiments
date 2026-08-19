@@ -2,6 +2,7 @@
 network_static_ip: "10.3.30.12/24"
 # This client's cable is in the PCIe Intel NIC, not the onboard eth0.
 network_interface: "enP1p1s0"
+nic_phc_driver: igc  # the i226's PHC, not the onboard PHY's
 
 # chrony measured 8 ns rms / 66 ns max here (2026-08-04) -- median
 # filtering pays off even on the i226's clean PCIe read path.
