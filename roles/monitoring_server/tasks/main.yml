@@ -25,20 +25,7 @@
         - "{{ monitoring_deploy_path }}"
         - "{{ monitoring_deploy_path }}/prometheus"
         - "{{ monitoring_deploy_path }}/prometheus-data"
-        - "{{ monitoring_deploy_path }}/grafana"
-        - "{{ monitoring_deploy_path }}/grafana/provisioning"
-        - "{{ monitoring_deploy_path }}/grafana/provisioning/datasources"
-        - "{{ monitoring_deploy_path }}/grafana/provisioning/dashboards"
-        - "{{ monitoring_deploy_path }}/grafana/dashboards"
         - "{{ monitoring_deploy_path }}/textfile"
-
-    - name: Set ownership on Grafana data directory.
-      ansible.builtin.file:
-        path: "{{ monitoring_deploy_path }}/grafana"
-        state: directory
-        owner: "{{ monitoring_uid }}"
-        group: "{{ monitoring_gid }}"
-        recurse: true
 
     - name: Set ownership on Prometheus data directory.
       ansible.builtin.file:
@@ -62,33 +49,6 @@
         mode: "0644"
       notify: Restart prometheus
 
-    - name: Deploy Grafana datasource provisioning.
-      ansible.builtin.template:
-        src: grafana-datasources.yml.j2
-        dest: "{{ monitoring_deploy_path }}/grafana/provisioning/datasources/datasources.yml"
-        owner: "{{ monitoring_uid }}"
-        group: "{{ monitoring_gid }}"
-        mode: "0644"
-      notify: Restart monitoring-stack
-
-    - name: Deploy Grafana dashboard provisioning.
-      ansible.builtin.template:
-        src: grafana-dashboards.yml.j2
-        dest: "{{ monitoring_deploy_path }}/grafana/provisioning/dashboards/dashboards.yml"
-        owner: "{{ monitoring_uid }}"
-        group: "{{ monitoring_gid }}"
-        mode: "0644"
-      notify: Restart monitoring-stack
-
-    - name: Deploy Grafana dashboards.
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/files/dashboards/"
-        dest: "{{ monitoring_deploy_path }}/grafana/dashboards/"
-        owner: "{{ monitoring_uid }}"
-        group: "{{ monitoring_gid }}"
-        mode: "0644"
-      notify: Restart monitoring-stack
-
     - name: Deploy compose.yaml.
       ansible.builtin.template:
         src: compose.yaml.j2
@@ -96,10 +56,13 @@
         mode: "0644"
       notify: Restart monitoring-stack
 
+    # remove_orphans clears containers dropped from compose.yaml (e.g. the
+    # grafana container after the move to the homelab Grafana server).
     - name: Ensure monitoring stack is running.
       community.docker.docker_compose_v2:
         project_src: "{{ monitoring_deploy_path }}"
         state: present
+        remove_orphans: true
 
 - name: Tear down monitoring stack.
   when: not monitoring_enabled
