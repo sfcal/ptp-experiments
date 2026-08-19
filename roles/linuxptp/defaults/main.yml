@@ -1,0 +1,6 @@
+---
+# Services built from the linuxptp tree that must restart after a rebuild.
+# The grandmaster's active pipeline profile extends this list (e.g. ts2phc
+# or phc2sys).
+linuxptp_managed_services:
+  - ptp4l

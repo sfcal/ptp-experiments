@@ -1,0 +1,18 @@
+---
+# Shared chrony role for the grandmaster and clients. Each fragment is
+# deployed only when its variable is non-empty and removed when it is empty,
+# so deploys converge on the configured state.
+
+# Refclock lines for /etc/chrony/conf.d/refclock.conf (free-form chrony
+# refclock directives; see group_vars for the per-role values).
+chrony_refclock: ""
+
+# Append 'hwtimestamp *' to refclock.conf (grandmaster only).
+chrony_hwtimestamp: false
+
+# Subnet(s) allowed to query chrony for NTP time (grandmaster only).
+chrony_allow: ""
+
+# Upstream NTP servers for /etc/chrony/sources.d/servers.sources.
+chrony_servers: []
+chrony_server_options: iburst

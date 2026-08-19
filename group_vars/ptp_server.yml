@@ -52,6 +52,10 @@ timecard_sma:
   sma2: "OUT: 10Mhz"
   sma3: "OUT: PHC"     
 
+# Enable NIC hardware timestamping for NTP clients (hwtimestamp * in
+# refclock.conf).
+chrony_hwtimestamp: true
+
 # Refclock to be used as a time source.
 # See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
 chrony_refclock: |
@@ -93,9 +97,33 @@ chrony_servers:
 
 chrony_server_options: iburst xleave
 
-# PTP 4 Linux options.
-ptp4l_service_state: started
-ptp4l_service_enabled: true
+# Services restarted after a linuxptp rebuild (see roles/linuxptp).
+linuxptp_managed_services:
+  - ptp4l
+  - ts2phc
+
+# Grandmaster-specific ptp4l.conf directives (appended to the shared header
+# in roles/ptp4l/templates/ptp4l.conf.j2).
+ptp4l_conf_extra: |
+  # Act only as a master. ('serverOnly' on later versions...)
+  masterOnly 1
+
+  # BMCA priorities (lower wins)
+  priority1 127
+  priority2 127
+
+  # clockClass=6 for GNSS reference
+  # other classes = https://documentation.nokia.com/srlinux/24-10/books/network-synchronization/ieee-1588-ptp.html
+  clockClass 6
+
+  # 0x20 = time accurate to within 25ns
+  clockAccuracy 0x20
+
+  # Sync message rate: 2^-3 = 8 msgs/sec
+  logSyncInterval -3
+
+  # Announce message rate: 2^0 = 1 msg/sec
+  logAnnounceInterval 0
 
 # The NIC PHC (/dev/ptp0, served by ptp4l) is synced from the Timecard by
 # ts2phc: Timecard 1PPS -> TimeNIC SDP1, hardware edge timestamping (~6 ns

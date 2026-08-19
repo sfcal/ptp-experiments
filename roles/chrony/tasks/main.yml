@@ -1,0 +1,85 @@
+---
+- name: Install chrony.
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+
+# Exactly one daemon may discipline the system clock.
+- name: Stop and disable systemd-timesyncd.
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+  failed_when: false  # unit may not exist on all images
+
+- name: Comment out default pool/server lines in chrony.conf.
+  ansible.builtin.replace:
+    dest: /etc/chrony/chrony.conf
+    regexp: '^(pool|server)\s+.*\.(pool\.ntp\.org|ubuntu\.com).*$'
+    replace: '# \1 (removed by Ansible)'
+  notify: Restart chrony
+
+- name: Remove Ubuntu default NTP sources (sources.d).
+  ansible.builtin.file:
+    path: /etc/chrony/sources.d/ubuntu-ntp-pools.sources
+    state: absent
+  notify: Restart chrony
+
+- name: Configure allow list.
+  ansible.builtin.template:
+    src: allow.conf.j2
+    dest: /etc/chrony/conf.d/allow.conf
+    mode: "0644"
+  notify: Restart chrony
+  when: chrony_allow | length > 0
+
+- name: Remove allow list when unconfigured.
+  ansible.builtin.file:
+    path: /etc/chrony/conf.d/allow.conf
+    state: absent
+  notify: Restart chrony
+  when: chrony_allow | length == 0
+
+- name: Configure refclocks.
+  ansible.builtin.template:
+    src: refclock.conf.j2
+    dest: /etc/chrony/conf.d/refclock.conf
+    mode: "0644"
+  notify: Restart chrony
+  when: chrony_refclock | length > 0
+
+- name: Remove refclocks when unconfigured.
+  ansible.builtin.file:
+    path: /etc/chrony/conf.d/refclock.conf
+    state: absent
+  notify: Restart chrony
+  when: chrony_refclock | length == 0
+
+- name: Configure NTP sources.
+  ansible.builtin.template:
+    src: servers.sources.j2
+    dest: /etc/chrony/sources.d/servers.sources
+    mode: "0644"
+  notify: Restart chrony
+  when: chrony_servers | length > 0
+
+- name: Remove NTP sources when unconfigured.
+  ansible.builtin.file:
+    path: /etc/chrony/sources.d/servers.sources
+    state: absent
+  notify: Restart chrony
+  when: chrony_servers | length == 0
+
+# Transitional: clients used to render their refclock into a differently
+# named fragment. Remove after one full fleet deploy.
+- name: Remove legacy client-refclock.conf (renamed to refclock.conf).
+  ansible.builtin.file:
+    path: /etc/chrony/conf.d/client-refclock.conf
+    state: absent
+  notify: Restart chrony
+
+- name: Ensure chrony is running.
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true

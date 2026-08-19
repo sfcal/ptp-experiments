@@ -1,0 +1,5 @@
+---
+# Where ptp-metrics.sh writes node_exporter textfile metrics. The
+# grandmaster overrides this to the containerized node-exporter's mount;
+# clients use the apt prometheus-node-exporter default.
+ptp_metrics_textfile_dir: /var/lib/prometheus/node-exporter

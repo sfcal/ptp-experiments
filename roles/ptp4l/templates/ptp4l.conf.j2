@@ -1,0 +1,11 @@
+[global]
+
+# See: https://austinsnerdythings.com/2025/02/18/nanosecond-accurate-ptp-server-grandmaster-and-client-tutorial-for-raspberry-pi/
+
+# Log level (0 = disabled, 1 = print to stdout)
+verbose 1
+
+# Force hardware timestamping
+time_stamping         hardware
+
+{{ ptp4l_conf_extra }}

@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+
+# Define a hardware reference clock to be used for a time source.
+{{ chrony_refclock }}
+{% if chrony_hwtimestamp %}
+hwtimestamp *
+{% endif %}

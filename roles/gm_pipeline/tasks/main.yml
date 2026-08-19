@@ -1,0 +1,34 @@
+---
+# Grandmaster NIC-PHC discipline leg. Phase 1 of the restructure: ts2phc
+# only, exactly as before. Pipeline profiles (ts2phc vs phc2sys switching)
+# land in a later phase.
+
+- name: Copy ts2phc systemd unit file into place.
+  ansible.builtin.template:
+    src: ts2phc.service.j2
+    dest: /etc/systemd/system/ts2phc.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart ts2phc
+
+- name: Ensure ts2phc service is in the correct state.
+  ansible.builtin.service:
+    name: ts2phc
+    state: "{{ ts2phc_service_state }}"
+    enabled: "{{ ts2phc_service_enabled }}"
+
+# Transitional: phc2sys used to steer the system clock before chrony's PHC
+# refclock replaced it. Remove once the fleet is known clean (and before the
+# phc2sys pipeline profile reuses this unit name).
+- name: Remove any legacy phc2sys service.
+  ansible.builtin.systemd_service:
+    name: phc2sys
+    state: stopped
+    enabled: false
+  failed_when: false  # unit absent on freshly provisioned hosts
+
+- name: Remove legacy phc2sys unit file.
+  ansible.builtin.file:
+    path: /etc/systemd/system/phc2sys.service
+    state: absent

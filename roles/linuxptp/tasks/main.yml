@@ -1,0 +1,21 @@
+---
+- name: Install linuxptp build requirements.
+  ansible.builtin.apt:
+    name:
+      - git
+      - build-essential
+    state: present
+
+- name: Clone linuxptp source.
+  ansible.builtin.git:
+    repo: "{{ linuxptp_repo }}"
+    dest: "{{ linuxptp_build_location }}"
+    version: "{{ linuxptp_version }}"
+  register: linuxptp_src
+
+- name: Build and install linuxptp.
+  ansible.builtin.shell:
+    cmd: make -j "$(nproc)" && make install
+    chdir: "{{ linuxptp_build_location }}"
+  when: linuxptp_src.changed
+  notify: Restart linuxptp services

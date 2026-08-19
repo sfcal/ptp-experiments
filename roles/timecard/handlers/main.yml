@@ -1,0 +1,12 @@
+---
+# Oneshot with RemainAfterExit: 'restarted' forces a re-run. The timecard
+# role is listed before the PTP roles in deploy.yml so this handler fires
+# before ts2phc/ptp4l restart (handlers fire in definition order, not
+# notification order).
+- name: Run timecard-sma
+  ansible.builtin.systemd_service:
+    name: timecard-sma
+    state: restarted
+    daemon_reload: true
+  # In --check on a fresh host the unit file hasn't been written yet.
+  ignore_errors: "{{ ansible_check_mode }}"

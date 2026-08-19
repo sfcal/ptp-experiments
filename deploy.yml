@@ -1,76 +1,118 @@
 ---
-- name: Deploy Time Server (NTP/PTP)
+# Role order matters for handlers: handlers fire in definition order, and
+# roles register theirs in listing order. 'timecard' must precede the PTP
+# roles so "Run timecard-sma" (SMA routing + kernel PPS enable) fires before
+# ts2phc/ptp4l restart.
+- name: Deploy PTP grandmaster
   hosts: ptp_server
   become: true
 
-  handlers:
-    - name: Include various service handlers.
-      ansible.builtin.import_tasks: handlers/main.yml
-
   pre_tasks:
     - name: Update apt cache.
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 1800
+      tags: [always]
 
   tasks:
     - name: Configure network.
-      ansible.builtin.include_tasks: tasks/network.yml
+      ansible.builtin.import_role:
+        name: network
+      tags: [network]
 
     - name: Configure GPS.
-      ansible.builtin.include_tasks: tasks/gps.yml
+      ansible.builtin.import_role:
+        name: gpsd
+      tags: [gpsd]
 
-    - name: Configure Timecard SMA routing.
-      ansible.builtin.include_tasks: tasks/timecard.yml
-      when: ptp_role == 'grandmaster' and timecard_sma is defined
+    - name: Configure Timecard (udev rules + SMA routing).
+      ansible.builtin.import_role:
+        name: timecard
+      tags: [timecard]
 
-    - name: Configure chrony.
-      ansible.builtin.include_tasks: tasks/chrony.yml
+    - name: Configure chrony (NTP server, Timecard refclock).
+      ansible.builtin.import_role:
+        name: chrony
+      tags: [chrony]
 
     - name: Install igc-ppsfix DKMS driver.
-      ansible.builtin.include_tasks: tasks/igc-ppsfix.yml
-      when: ptp_role == 'grandmaster' and igc_ppsfix_enabled | default(false)
+      ansible.builtin.import_tasks: tasks/igc-ppsfix.yml
+      when: igc_ppsfix_enabled | default(false)
+      tags: [dkms]
 
     - name: Install ptp-ocp-gnsspps DKMS driver.
-      ansible.builtin.include_tasks: tasks/ptp-ocp-gnsspps.yml
-      when: ptp_role == 'grandmaster' and ptp_ocp_gnsspps_enabled | default(false)
+      ansible.builtin.import_tasks: tasks/ptp-ocp-gnsspps.yml
+      when: ptp_ocp_gnsspps_enabled | default(false)
+      tags: [dkms]
 
-    - name: Configure PTP.
-      ansible.builtin.include_tasks: tasks/ptp.yml
+    - name: Build linuxptp from source.
+      ansible.builtin.import_role:
+        name: linuxptp
+      tags: [ptp]
 
-    - name: Configure monitoring.
-      ansible.builtin.include_tasks: tasks/monitoring.yml
+    - name: Configure ptp4l.
+      ansible.builtin.import_role:
+        name: ptp4l
+      tags: [ptp]
 
-- name: Deploy PTP Clients (Raspberry Pi)
+    - name: Configure the NIC-PHC discipline pipeline.
+      ansible.builtin.import_role:
+        name: gm_pipeline
+      tags: [ptp, pipeline]
+
+    - name: Deploy ptp metrics collector.
+      ansible.builtin.import_role:
+        name: ptp_metrics
+      tags: [monitoring]
+
+    - name: Deploy monitoring stack.
+      ansible.builtin.import_role:
+        name: monitoring_server
+      tags: [monitoring]
+
+- name: Deploy PTP clients
   hosts: ptp_clients
   become: true
 
-  handlers:
-    - name: Include various service handlers.
-      ansible.builtin.import_tasks: handlers/main.yml
-
   pre_tasks:
     - name: Update apt cache.
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 1800
+      tags: [always]
 
   tasks:
     - name: Configure network.
-      ansible.builtin.include_tasks: tasks/network.yml
-
-    - name: Disable competing time sync daemons.
-      ansible.builtin.include_tasks: tasks/timesync-client.yml
+      ansible.builtin.import_role:
+        name: network
+      tags: [network]
 
     - name: Install igc-ppsfix DKMS driver (i226 clients).
-      ansible.builtin.include_tasks: tasks/igc-ppsfix.yml
+      ansible.builtin.import_tasks: tasks/igc-ppsfix.yml
       when: igc_ppsfix_enabled | default(false)
+      tags: [dkms]
 
-    - name: Configure PTP.
-      ansible.builtin.include_tasks: tasks/ptp.yml
+    - name: Build linuxptp from source.
+      ansible.builtin.import_role:
+        name: linuxptp
+      tags: [ptp]
+
+    - name: Configure ptp4l.
+      ansible.builtin.import_role:
+        name: ptp4l
+      tags: [ptp]
 
     - name: Configure chrony (system clock from NIC PHC).
-      ansible.builtin.include_tasks: tasks/chrony-client.yml
+      ansible.builtin.import_role:
+        name: chrony
+      tags: [chrony]
 
-    - name: Configure monitoring (metrics only).
-      ansible.builtin.include_tasks: tasks/monitoring-client.yml
+    - name: Deploy ptp metrics collector.
+      ansible.builtin.import_role:
+        name: ptp_metrics
+      tags: [monitoring]
+
+    - name: Deploy node exporter.
+      ansible.builtin.import_role:
+        name: monitoring_agent
+      tags: [monitoring]

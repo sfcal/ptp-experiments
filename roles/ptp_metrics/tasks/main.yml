@@ -1,0 +1,27 @@
+---
+# ptp4l/chrony/pipeline metrics published through the node_exporter
+# textfile collector. Shared by the grandmaster and clients.
+- name: Deploy ptp metrics collector.
+  when: monitoring_enabled
+  block:
+    - name: Deploy ptp4l metrics collector script.
+      ansible.builtin.template:
+        src: ptp-metrics.sh.j2
+        dest: /usr/local/bin/ptp-metrics.sh
+        mode: "0755"
+
+    - name: Deploy ptp4l metrics systemd units.
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - ptp-metrics.service
+        - ptp-metrics.timer
+
+    - name: Ensure ptp4l metrics timer is running.
+      ansible.builtin.systemd_service:
+        name: ptp-metrics.timer
+        state: started
+        enabled: true
+        daemon_reload: true
