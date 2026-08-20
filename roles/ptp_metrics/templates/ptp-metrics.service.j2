@@ -1,7 +1,0 @@
-# {{ ansible_managed }}
-[Unit]
-Description=Export ptp4l metrics for Prometheus
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/ptp-metrics.sh

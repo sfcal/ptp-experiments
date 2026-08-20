@@ -46,10 +46,15 @@ profile reused the name.
 
 ## Layout
 
-- `deploy.yml` — the only playbook; a grandmaster play and a clients play.
-  Tags: `network`, `gpsd`, `timecard`, `chrony`, `dkms`, `ptp`, `pipeline`,
-  `monitoring`.
-- `roles/` — `network`, `gpsd`, `timecard` (udev rules + SMA routing),
+- `deploy.yml` — the main playbook; a grandmaster play and a clients play.
+  Tags: `gpsd`, `timecard`, `chrony`, `dkms`, `ptp`, `pipeline`,
+  `monitoring`. (Node IPs are provisioned by netboot; nothing here manages
+  addressing.)
+- `reset.yml` — hard-reset CM5 nodes (VC reboot flags + reboot); requires
+  `-e reset_hosts=...`.
+- `tasks/`, `handlers/` — flattened single-play pieces too small for a role
+  (currently gpsd, grandmaster only).
+- `roles/` — `timecard` (udev rules + SMA routing),
   `chrony` (GM and clients, fragments converge on their vars), `dkms_module`
   (parameterized, used for both patched drivers), `linuxptp` (source build,
   pinned commit in `group_vars/all.yml`), `ptp4l`, `gm_pipeline`,

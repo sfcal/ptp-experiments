@@ -1,0 +1,25 @@
+---
+- name: Add ts2phc configuration.
+  ansible.builtin.template:
+    src: ts2phc.conf.j2
+    dest: /etc/linuxptp/ts2phc.conf
+    mode: "0644"
+  notify: Restart ts2phc
+  when: ts2phc_enabled
+
+- name: Copy ts2phc systemd unit file into place.
+  ansible.builtin.template:
+    src: ts2phc.service.j2
+    dest: /etc/systemd/system/ts2phc.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart ts2phc
+  when: ts2phc_enabled
+
+- name: Ensure ts2phc service is in the correct state.
+  ansible.builtin.service:
+    name: ts2phc
+    state: "{{ ts2phc_service_state }}"
+    enabled: "{{ ts2phc_service_enabled }}"
+  when: ts2phc_enabled

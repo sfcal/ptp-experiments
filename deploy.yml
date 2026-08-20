@@ -7,12 +7,6 @@
   hosts: ptp_server
   become: true
 
-  # Pipeline profile selected by gm_pipeline (group_vars/ptp_server.yml or
-  # -e gm_pipeline=...). Play-scoped so the monitoring roles see the same
-  # profile flags. A typo'd profile name fails here, at play start.
-  vars_files:
-    - "vars/gm_pipelines/{{ gm_pipeline }}.yml"
-
   pre_tasks:
     - name: Update apt cache.
       ansible.builtin.apt:
@@ -21,20 +15,15 @@
       tags: [always]
 
   tasks:
-    - name: Configure network.
-      ansible.builtin.import_role:
-        name: network
-      tags: [network]
-
-    - name: Configure GPS.
-      ansible.builtin.import_role:
-        name: gpsd
-      tags: [gpsd]
-
-    - name: Configure Timecard (udev rules + SMA routing).
+    - name: Configure Timecard (driver, SMA routing, GPS).
       ansible.builtin.import_role:
         name: timecard
       tags: [timecard]
+
+    - name: Build linuxptp and configure ptp4l/ts2phc.
+      ansible.builtin.import_role:
+        name: linuxptp
+      tags: [ptp]
 
     - name: Configure chrony (NTP server, Timecard refclock).
       ansible.builtin.import_role:
@@ -56,71 +45,16 @@
         dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
         dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
-    - name: Install ptp-ocp-gnsspps DKMS driver (TAP PTM driver + raw GNSS PPS, see ptp-ocp-gnsspps/).
-      ansible.builtin.import_role:
-        name: dkms_module
-      when: ptp_ocp_gnsspps_enabled | default(false)
-      tags: [dkms]
-      vars:
-        dkms_name: ptp_ocp
-        dkms_display: ptp-ocp-gnsspps
-        dkms_version: "{{ ptp_ocp_gnsspps_version }}"
-        dkms_src: "{{ playbook_dir }}/ptp-ocp-gnsspps/dkms/"
-        dkms_deploy_path: "{{ ptp_ocp_gnsspps_deploy_path }}"
-        dkms_reboot_pkg: ptp-ocp-gnsspps-dkms
-        dkms_modinfo_asserts: ['/updates/', 'gnss_pps']
-        dkms_modprobe_conf_name: ptp_ocp-gnsspps.conf
-        dkms_modprobe_conf: |
-          # Managed by Ansible (roles/dkms_module).
-          # The card runs a PTM FPGA image; the stock in-tree ptp_ocp cannot
-          # drive it (all-ones registers, wedges udev via a D-state spi-nor
-          # probe). Blacklist stops any alias autoload; ptp_ocp-load.service
-          # loads the DKMS build explicitly at boot.
-          blacklist ptp_ocp
-          # Under the PTM image the FPGA's SPI flash never answers: the
-          # spi-nor JEDEC-ID probe hangs a udev worker in D-state, and udev
-          # then serializes ALL events for the Time Card's PCI device behind
-          # it -- /dev/ptp-timecard is never created and chrony/timecard-sma
-          # fail. devlink flash is unusable under PTM regardless (reflashing
-          # is a JTAG job), so keep the flash driver off entirely.
-          blacklist spi_nor
-          # Feed the Time Card's kernel PPS device from the raw GNSS 1PPS
-          # timestamper (ts0).
-          options ptp_ocp gnss_pps=1
-        dkms_load_service: true
-        dkms_load_before:
-          - timecard-sma.service
-          - chrony.service
-          - gpsd.service
-          - ts2phc.service
-          - phc2sys.service
-          - ptp4l.service
-        dkms_auto_reboot: "{{ ptp_ocp_gnsspps_auto_reboot | default(false) }}"
 
-    - name: Build linuxptp from source.
-      ansible.builtin.import_role:
-        name: linuxptp
-      tags: [ptp]
+    # - name: Deploy ptp metrics collector.
+    #   ansible.builtin.import_role:
+    #     name: ptp_metrics
+    #   tags: [monitoring]
 
-    - name: Configure ptp4l.
-      ansible.builtin.import_role:
-        name: ptp4l
-      tags: [ptp]
-
-    - name: Configure the NIC-PHC discipline pipeline.
-      ansible.builtin.import_role:
-        name: gm_pipeline
-      tags: [ptp, pipeline]
-
-    - name: Deploy ptp metrics collector.
-      ansible.builtin.import_role:
-        name: ptp_metrics
-      tags: [monitoring]
-
-    - name: Deploy monitoring stack.
-      ansible.builtin.import_role:
-        name: monitoring_server
-      tags: [monitoring]
+    # - name: Deploy monitoring stack.
+    #   ansible.builtin.import_role:
+    #     name: monitoring_server
+    #   tags: [monitoring]
 
 - name: Deploy PTP clients
   hosts: ptp_clients
@@ -133,48 +67,39 @@
         cache_valid_time: 1800
       tags: [always]
 
-  tasks:
-    - name: Configure network.
-      ansible.builtin.import_role:
-        name: network
-      tags: [network]
-
-    - name: Install igc-ppsfix DKMS driver (i226 clients).
-      ansible.builtin.import_role:
-        name: dkms_module
-      when: igc_ppsfix_enabled | default(false)
-      tags: [dkms]
-      vars:
-        dkms_name: igc
-        dkms_display: igc-ppsfix
-        dkms_version: "{{ igc_ppsfix_version }}"
-        dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
-        dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
-        dkms_reboot_pkg: igc-ppsfix-dkms
-        dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
-        dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
-
-    - name: Build linuxptp from source.
+    # ts2phc_enabled defaults to false, so clients get only ptp4l.
+    - name: Build linuxptp and configure ptp4l.
       ansible.builtin.import_role:
         name: linuxptp
       tags: [ptp]
 
-    - name: Configure ptp4l.
-      ansible.builtin.import_role:
-        name: ptp4l
-      tags: [ptp]
+    # - name: Install igc-ppsfix DKMS driver (i226 clients).
+    #   ansible.builtin.import_role:
+    #     name: dkms_module
+    #   when: igc_ppsfix_enabled | default(false)
+    #   tags: [dkms]
+    #   vars:
+    #     dkms_name: igc
+    #     dkms_display: igc-ppsfix
+    #     dkms_version: "{{ igc_ppsfix_version }}"
+    #     dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
+    #     dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
+    #     dkms_reboot_pkg: igc-ppsfix-dkms
+    #     dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
+    #     dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
-    - name: Configure chrony (system clock from NIC PHC).
-      ansible.builtin.import_role:
-        name: chrony
-      tags: [chrony]
 
-    - name: Deploy ptp metrics collector.
-      ansible.builtin.import_role:
-        name: ptp_metrics
-      tags: [monitoring]
+    # - name: Configure chrony (system clock from NIC PHC).
+    #   ansible.builtin.import_role:
+    #     name: chrony
+    #   tags: [chrony]
 
-    - name: Deploy node exporter.
-      ansible.builtin.import_role:
-        name: monitoring_agent
-      tags: [monitoring]
+    # - name: Deploy ptp metrics collector.
+    #   ansible.builtin.import_role:
+    #     name: ptp_metrics
+    #   tags: [monitoring]
+
+    # - name: Deploy node exporter.
+    #   ansible.builtin.import_role:
+    #     name: monitoring_agent
+    #   tags: [monitoring]

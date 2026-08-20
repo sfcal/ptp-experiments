@@ -1,0 +1,18 @@
+---
+# Lift the netboot-staged ptp_ocp blacklist. The homelab autoinstall writes
+# /etc/modprobe.d/blacklist-timecard.conf so a freshly reimaged MU cannot
+# hang on the stock driver. Must run after driver.yml, which installs the
+# working driver under /updates/.
+
+- name: Remove the installer-staged timecard blacklist.
+  ansible.builtin.file:
+    path: /etc/modprobe.d/blacklist-timecard.conf
+    state: absent
+  register: installer_blacklist_removed
+
+# The autoinstall baked the blacklist into the initramfs, so rebuild it
+# after removal. -k all: every installed kernel's initramfs carries it.
+- name: Rebuild initramfs without the installer-staged blacklist.
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k all
+  when: installer_blacklist_removed.changed

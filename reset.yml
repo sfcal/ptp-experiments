@@ -1,0 +1,26 @@
+---
+# Hard-reset CM5 nodes: set the VC reboot flags (0x0003808b, value 0xf12)
+# so the next reboot is a full power-on-style reset, then reboot and wait
+# for the node to come back.
+#
+# There is deliberately no default host pattern -- you must name the nodes:
+#   ansible-playbook reset.yml -e reset_hosts=10.3.30.11
+#   ansible-playbook reset.yml -e reset_hosts=10.3.30.11,10.3.30.12
+#   ansible-playbook reset.yml -e reset_hosts=ptp_clients
+# Running it without -e reset_hosts fails at play start.
+#
+# Resetting Timeserver requires changing boot order in BIOS to netboot first
+- name: Reset CM5 nodes
+  hosts: "{{ reset_hosts }}"
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Set VC reboot flags for a full reset.
+      ansible.builtin.command:
+        cmd: vcmailbox 0x0003808b 4 4 0xf12
+      changed_when: true
+
+    - name: Reboot and wait for the node to return.
+      ansible.builtin.reboot:
+        reboot_timeout: 600

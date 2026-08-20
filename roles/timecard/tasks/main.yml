@@ -1,24 +1,24 @@
 ---
-# Timecard udev rules and SMA input/output routing via the ptp_ocp sysfs
-# interface. The udev rules are deployed unconditionally: chrony and ts2phc
-# depend on the stable /dev/ptp-timecard and /dev/pps-timecard symlinks even
-# when no SMA routing is configured. Sysfs writes do not survive a reboot,
-# so a oneshot systemd unit reapplies the configured mapping at boot; the
-# handler applies it at deploy time.
+- name: Build ptp_ocp driver from source.
+  ansible.builtin.include_tasks: driver.yml
 
-- name: Deploy Timecard udev rules (stable /dev/ptp-timecard and /dev/pps-timecard).
-  ansible.builtin.copy:
-    src: timecard-ptp.rules
-    dest: /etc/udev/rules.d/99-timecard-ptp.rules
-    owner: root
-    group: root
-    mode: "0644"
-  register: timecard_udev
+# After driver.yml: only safe once the working driver is on disk.
+- name: Remove the installer-staged ptp_ocp blacklist.
+  ansible.builtin.include_tasks: installer_blacklist.yml
 
-- name: Reload udev and apply the Timecard symlink rules.
+# No udev symlink rules: device numbering (/dev/ptpN, /dev/ppsN) depends on
+# driver probe order, but only changes when NICs are added or removed --
+# fix the referencing config by hand if that happens.
+- name: Remove the Timecard udev symlink rules.
+  ansible.builtin.file:
+    path: /etc/udev/rules.d/99-timecard-ptp.rules
+    state: absent
+  register: timecard_udev_removed
+
+- name: Reload udev and drop the Timecard symlinks.
   ansible.builtin.shell:
     cmd: udevadm control --reload && udevadm trigger --subsystem-match=ptp --subsystem-match=pps
-  when: timecard_udev.changed
+  when: timecard_udev_removed.changed
 
 - name: Deploy Timecard SMA routing script.
   ansible.builtin.template:
@@ -38,15 +38,8 @@
     group: root
     mode: "0644"
   notify: Run timecard-sma
-  when: timecard_sma is defined
 
-# Enable only: first-time activation and config changes both go through the
-# handler, whose 'restarted' state re-runs the RemainAfterExit oneshot.
-- name: Ensure timecard-sma runs at boot.
-  ansible.builtin.systemd_service:
-    name: timecard-sma
-    enabled: true
-    daemon_reload: true
-  when: timecard_sma is defined
-  # In --check on a fresh host the unit file hasn't been written yet.
-  ignore_errors: "{{ ansible_check_mode }}"
+# Last: gpsd consumes the GNSS serial and the kernel PPS enabled above.
+- name: Configure GPS.
+  ansible.builtin.include_tasks: gps.yml
+

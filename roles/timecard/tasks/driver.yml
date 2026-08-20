@@ -1,0 +1,42 @@
+---
+# Build and install the ptp_ocp driver from DRV/ (out-of-tree, PTM-capable;
+# see DRV/README.md). remake compiles against the running kernel's headers,
+# installs ptp_ocp.ko under /lib/modules/<kver>/updates/, and runs depmod.
+# The module is not loaded here; reboot to pick it up.
+
+- name: Install kernel build prerequisites.
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - "linux-headers-{{ ansible_kernel }}"
+    state: present
+
+- name: Create the driver build directory.
+  ansible.builtin.file:
+    path: "/opt/ptp_ocp"
+    state: directory
+    mode: "0755"
+
+- name: Copy the driver sources.
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/DRV/{{ item }}"
+    dest: "/opt/ptp_ocp/{{ item }}"
+    mode: preserve
+  loop:
+    - Makefile
+    - ptp_ocp.c
+    - remake
+  register: ptp_ocp_sources
+
+# The install path is per-kernel, so a kernel upgrade also retriggers this.
+- name: Check for an installed module for this kernel.
+  ansible.builtin.stat:
+    path: /lib/modules/{{ ansible_kernel }}/updates/ptp_ocp.ko
+  register: ptp_ocp_installed
+
+- name: Build and install ptp_ocp.ko for the running kernel.
+  ansible.builtin.command:
+    cmd: ./remake install
+    chdir: "/opt/ptp_ocp"
+  when: ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists
+

@@ -1,0 +1,9 @@
+---
+ptp4l_enabled: true
+ptp4l_service_state: started
+ptp4l_service_enabled: true
+
+# Role-specific ptp4l.conf directives appended to the shared header
+# (grandmaster: masterOnly/clockClass/...; clients: slaveOnly/quirks).
+# Set per group/host in group_vars / host_vars.
+ptp4l_conf_extra: ""

@@ -34,14 +34,16 @@ echo "no SMA mappings configured (timecard_sma is empty); nothing to do"
 {% if timecard_kernel_pps | default(false) %}
 
 # Enable kernel PPS events on the Timecard PHC (PTP_ENABLE_PPS = _IOW('=',4,int)).
-# The request persists in the driver after the fd closes; /dev/pps-timecard then
-# asserts once per second (raw GNSS PPS with the ptp-ocp-gnsspps module loaded,
-# disciplined FPGA PPS on the stock driver) for gpsd to consume.
-python3 - <<'PYEOF'
+# The PHC's /dev/ptpN is resolved through the sysfs link (numbering depends
+# on driver probe order). The request persists in the driver after the fd
+# closes; the PHC's ppsN device then asserts once per second for gpsd.
+PHC_DEV="/dev/$(basename "$(readlink "$SYSFS/ptp")")"
+PHC_DEV="$PHC_DEV" python3 - <<'PYEOF'
 import fcntl, os, struct
-fd = os.open("/dev/ptp-timecard", os.O_RDWR)
+dev = os.environ["PHC_DEV"]
+fd = os.open(dev, os.O_RDWR)
 fcntl.ioctl(fd, 0x40043D04, struct.pack("i", 1))
 os.close(fd)
-print("kernel PPS events enabled on /dev/ptp-timecard")
+print(f"kernel PPS events enabled on {dev}")
 PYEOF
 {% endif %}

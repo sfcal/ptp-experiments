@@ -10,3 +10,8 @@
     daemon_reload: true
   # In --check on a fresh host the unit file hasn't been written yet.
   ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Restart gpsd
+  ansible.builtin.service:
+    name: gpsd
+    state: restarted

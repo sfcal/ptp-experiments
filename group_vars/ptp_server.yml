@@ -4,19 +4,20 @@ ptp_role: grandmaster
 
 network_interface: "enp1s0"
 
-# The GM has TWO igc NICs (TimeNIC enp1s0 + enp3s0), so the /dev/ptp-nic
-# udev rule must match the TimeNIC's PCI address, not the driver name.
-nic_phc_match: pci
-nic_phc_pci: "0000:01:00.0"
+# The GM has TWO igc NICs (TimeNIC enp1s0 + enp3s0). ts2phc/phc2sys target
+# the TimeNIC by interface name (ethtool resolves its PHC), so no udev
+# symlink or PCI matcher is needed; only chrony's NIC refclock still names
+# a raw /dev/ptpN (see chrony_refclock below).
 
-# GPSd configuration. /dev/pps-timecard is the Timecard's kernel PPS device
-# (udev symlink, files/timecard-ptp.rules); with the ptp-ocp-gnsspps DKMS
-# module loaded it carries the raw GNSS receiver 1PPS, which gpsd pairs with
-# the NMEA time from ttyS7 and reports as class PPS (-> gpsd-exporter ->
-# Grafana "Clock offset from PPS" panels).
+# GPSd configuration. /dev/pps2 is the Timecard PHC's kernel PPS device
+# (enabled by timecard-sma.sh), which gpsd pairs with the NMEA time from
+# ttyS7 and reports as class PPS (-> gpsd-exporter -> Grafana "Clock offset
+# from PPS" panels). Device numbering follows driver probe order -- update
+# by hand if a NIC change renumbers /dev/ptpN//dev/ppsN (the Timecard's is
+# the ppsN whose /sys/class/pps/ppsN/name matches its /dev/ptpN).
 gpsd_state: started
 gpsd_enabled: true
-gpsd_devices: "/dev/ttyS7 /dev/pps-timecard"
+gpsd_devices: "/dev/ttyS7 /dev/pps2"
 gpsd_baud: "115200"
 gpsd_options: "-s {{ gpsd_baud }} -n"
 
@@ -35,7 +36,7 @@ ptp_ocp_gnsspps_enabled: true
 ptp_ocp_gnsspps_auto_reboot: false
 
 # Enable kernel PPS events on the Timecard PHC at boot (PTP_ENABLE_PPS ioctl
-# in timecard-sma.sh). Without this, /dev/pps-timecard exists but never
+# in timecard-sma.sh). Without this, the PHC's ppsN device exists but never
 # asserts.
 timecard_kernel_pps: true
 
@@ -71,25 +72,12 @@ chrony_hwtimestamp: true
 # Refclock to be used as a time source.
 # See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
 chrony_refclock: |
-  # Uncomment to use Timecard PHC as time source. /dev/ptp-timecard is a
-  # udev symlink (files/timecard-ptp.rules) that survives NIC swaps.
-  # nocrossts: PCIe PTM cross-timestamping on the Timecard link can die at
-  # runtime ("Exceeded number of tries for PTM cycle" in dmesg); chrony then
-  # never falls back and the refclock goes unreachable (seen 2026-08-04).
-  # Plain extended reads are sub-us and immune to PTM state.
-  refclock PHC /dev/ptp-timecard:nocrossts poll 0 refid AC precision 1e-9 tai prefer
-
-  # Uncomment to use NIC's PHC as time source.
-  # refclock PHC /dev/ptp-nic poll 0 dpoll -5 tai  # Use NIC's PHC
+  # /dev/ptp2 is Timecard PHC. :nocrossts removes PTM 
+  refclock PHC /dev/ptp2:nocrossts poll 0 refid AC tai prefer
+  refclock PHC /dev/ptp2 poll 0 refid PTM tai noselect
 
   # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
-  refclock PHC /dev/ptp-nic poll 0 dpoll -5 tai noselect refid NIC
-
-  # Uncomment to use GPS module directly as time source.
-  #refclock SHM 0 refid NMEA precision 1e-3 poll 0 filter 3
-
-  # Uncomment to use PPS source (e.g. GPS PPS to GPIO pin 18)
-  #refclock PPS /dev/pps0 refid PPS lock NMEA poll 3 trust
+  refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
 
   # Uncomment to log timing statistics.
   #log tracking measurements statistics

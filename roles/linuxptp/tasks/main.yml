@@ -19,3 +19,9 @@
     chdir: "{{ linuxptp_build_location }}"
   when: linuxptp_src.changed
   notify: Restart linuxptp services
+
+- name: Configure ptp4l.
+  ansible.builtin.import_tasks: ptp4l.yml
+
+- name: Configure ts2phc.
+  ansible.builtin.import_tasks: ts2phc.yml

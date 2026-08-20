@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Discipline the NIC PHC from a PPS source (ts2phc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+{% if ts2phc_source == 'generic' %}
+# Coarse-set the NIC PHC from the Timecard first: ts2phc's generic PPS
+# source aligns second edges only, so the PHC must hold the right absolute
+# (TAI) second before the servo takes over. '-' tolerates the timeout exit.
+ExecStartPre=-/bin/sh -c 'timeout {{ ts2phc_presync_timeout }} {{ linuxptp_sbin }}/phc2sys -s {{ ts2phc_presync_source }} -c {{ ts2phc_clock }} -O 0 -m'
+{% endif %}
+ExecStart={{ linuxptp_sbin }}/ts2phc -f /etc/linuxptp/ts2phc.conf -s {{ ts2phc_source }} -c {{ ts2phc_clock }} {{ ts2phc_extra_opts }}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

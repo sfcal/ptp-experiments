@@ -1,0 +1,35 @@
+---
+# Deploy ts2phc when true. deploy.yml wires this to the grandmaster
+# profile's gm_ts2phc_enabled; clients leave it off.
+ts2phc_enabled: false
+
+ts2phc_service_state: started
+ts2phc_service_enabled: true
+
+ts2phc_logging_level: 6
+
+# Time-of-day source (-s):
+#   /dev/ptpN -- a PHC (e.g. the Timecard's): ts2phc reads the source PHC
+#                to label the PPS edges, so the sink gets absolute TAI time
+#                and steps itself on the first sample (first_step_threshold).
+#                No presync needed.
+#   generic   -- PPS edges only, no TOD: needs the phc2sys presync
+#                ExecStartPre to coarse-set the sink first.
+ts2phc_source: generic
+
+# Sink (-c) and the SDP pin the PPS is wired to. An interface name, not a
+# /dev/ptpN path: linuxptp resolves the NIC's PHC via ethtool at startup,
+# which is immune to probe-order renumbering (no udev symlink needed).
+ts2phc_clock: "{{ ptp4l_ptp_iface }}"
+ts2phc_pin_index: 1
+
+# Extra ts2phc.conf directives appended to [global].
+ts2phc_conf_extra: ""
+
+# Extra command-line options appended to ExecStart.
+ts2phc_extra_opts: ""
+
+# Presync (generic source only): coarse-set the sink from this PHC before
+# the edge-aligning servo starts.
+ts2phc_presync_source: /dev/ptp2
+ts2phc_presync_timeout: 10

@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[global]
+# Log to stdout (journald), like the other linuxptp services.
+verbose 1
+use_syslog 0
+logging_level {{ ts2phc_logging_level }}
+
+# TAI-UTC table for leap-second handling.
+leapfile /usr/share/zoneinfo/leap-seconds.list
+
+{{ ts2phc_conf_extra }}
+[{{ ts2phc_clock }}]
+# SDP pin wired to the PPS source (Timecard SMA "OUT: PHC" on the GM).
+ts2phc.pin_index {{ ts2phc_pin_index }}

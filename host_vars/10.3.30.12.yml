@@ -1,5 +1,4 @@
 ---
-network_static_ip: "10.3.30.12/24"
 # This client's cable is in the PCIe Intel NIC, not the onboard eth0.
 network_interface: "enP1p1s0"
 nic_phc_driver: igc  # the i226's PHC, not the onboard PHY's

@@ -1,16 +1,10 @@
 ---
 system_timezone: Europe/London
 
-network_gateway: "10.3.30.1"
-network_dns_servers:
-  - 10.3.20.53
-  - 1.1.1.1
-
 # PTP runs on each host's primary NIC; override per group/host if needed.
 ptp4l_ptp_iface: "{{ network_interface }}"
 
 # linuxptp is built from source on each host for the latest features
-# (the distro package is removed). Bump the commit to upgrade the fleet.
 linuxptp_repo: git://git.code.sf.net/p/linuxptp/code
 linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
 linuxptp_build_location: /opt/linuxptp
@@ -28,6 +22,11 @@ igc_ppsfix_deploy_path: /opt/igc-ppsfix
 # enable with ptp_ocp_gnsspps_enabled. Version = TAP repo commit + patch rev.
 ptp_ocp_gnsspps_version: "tap-1042bd6f-gnsspps.1"  # must match ptp-ocp-gnsspps/dkms/dkms.conf
 ptp_ocp_gnsspps_deploy_path: /opt/ptp-ocp-gnsspps
+
+# ptp_ocp driver built from source (DRV/): out-of-tree PTM-capable build,
+# compiled on the host by DRV's remake script (tasks/ptp_ocp.yml).
+# Supersedes the ptp-ocp-gnsspps DKMS approach.
+#ptp_ocp_deploy_path: /opt/ptp_ocp
 
 # Set to false to stop and remove the monitoring services.
 monitoring_enabled: true
