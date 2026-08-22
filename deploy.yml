@@ -45,17 +45,6 @@
         dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
         dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
-
-    # - name: Deploy ptp metrics collector.
-    #   ansible.builtin.import_role:
-    #     name: ptp_metrics
-    #   tags: [monitoring]
-
-    # - name: Deploy monitoring stack.
-    #   ansible.builtin.import_role:
-    #     name: monitoring_server
-    #   tags: [monitoring]
-
 - name: Deploy PTP clients
   hosts: ptp_clients
   become: true

@@ -5,6 +5,12 @@
       - git
       - build-essential
     state: present
+  
+- name: Ensure /etc/linuxptp exists.
+  ansible.builtin.file:
+    path: /etc/linuxptp
+    state: directory
+    mode: "0755"
 
 - name: Clone linuxptp source.
   ansible.builtin.git:

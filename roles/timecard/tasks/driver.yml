@@ -2,7 +2,6 @@
 # Build and install the ptp_ocp driver from DRV/ (out-of-tree, PTM-capable;
 # see DRV/README.md). remake compiles against the running kernel's headers,
 # installs ptp_ocp.ko under /lib/modules/<kver>/updates/, and runs depmod.
-# The module is not loaded here; reboot to pick it up.
 
 - name: Install kernel build prerequisites.
   ansible.builtin.apt:
@@ -40,3 +39,34 @@
     chdir: "/opt/ptp_ocp"
   when: ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists
 
+# Rewrite the netboot-staged blacklist now that the working driver is on
+# disk: ptp_ocp comes off it, spi_nor stays on. Once ptp_ocp probes the card
+# it registers the FPGA's SPI flash device, udev autoloads spi_nor to bind
+# it, and the JEDEC-ID read hangs forever in the Xilinx SPI controller --
+# the TAP PTM image does not service it (D-state udev worker, hung-task
+# warnings, shutdown wedges). Costs firmware flashing from Linux, which we
+# do not do. Must precede the modprobe below so spi_nor is already
+# blacklisted when ptp_ocp registers the flash device.
+- name: Keep spi_nor blacklisted while allowing ptp_ocp.
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/blacklist-timecard.conf
+    content: |
+      # Managed by Ansible (roles/timecard). The TAP PTM FPGA image does not
+      # service the SPI flash controller; spi_nor's probe hangs in D state.
+      blacklist spi_nor
+    owner: root
+    group: root
+    mode: "0644"
+  register: installer_blacklist_updated
+
+# The autoinstall baked its blacklist into the initramfs, so rebuild after
+# changing the file. -k all: every installed kernel's initramfs carries it.
+- name: Rebuild initramfs with the updated blacklist.
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k all
+  when: installer_blacklist_updated.changed
+
+- name: Load the ptp_ocp driver.
+  community.general.modprobe:
+    name: ptp_ocp
+    state: present

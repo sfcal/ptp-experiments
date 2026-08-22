@@ -2,24 +2,6 @@
 - name: Build ptp_ocp driver from source.
   ansible.builtin.include_tasks: driver.yml
 
-# After driver.yml: only safe once the working driver is on disk.
-- name: Remove the installer-staged ptp_ocp blacklist.
-  ansible.builtin.include_tasks: installer_blacklist.yml
-
-# No udev symlink rules: device numbering (/dev/ptpN, /dev/ppsN) depends on
-# driver probe order, but only changes when NICs are added or removed --
-# fix the referencing config by hand if that happens.
-- name: Remove the Timecard udev symlink rules.
-  ansible.builtin.file:
-    path: /etc/udev/rules.d/99-timecard-ptp.rules
-    state: absent
-  register: timecard_udev_removed
-
-- name: Reload udev and drop the Timecard symlinks.
-  ansible.builtin.shell:
-    cmd: udevadm control --reload && udevadm trigger --subsystem-match=ptp --subsystem-match=pps
-  when: timecard_udev_removed.changed
-
 - name: Deploy Timecard SMA routing script.
   ansible.builtin.template:
     src: timecard-sma.sh.j2
@@ -39,7 +21,6 @@
     mode: "0644"
   notify: Run timecard-sma
 
-# Last: gpsd consumes the GNSS serial and the kernel PPS enabled above.
 - name: Configure GPS.
   ansible.builtin.include_tasks: gps.yml
 
