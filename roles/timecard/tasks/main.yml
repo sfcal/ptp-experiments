@@ -21,6 +21,14 @@
     mode: "0644"
   notify: Run timecard-sma
 
+- name: Enable timecard-sma at boot and ensure it has applied.
+  ansible.builtin.systemd_service:
+    name: timecard-sma
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: timecard_sma is defined
+
 - name: Configure GPS.
   ansible.builtin.include_tasks: gps.yml
 

@@ -17,7 +17,7 @@ network_interface: "enp1s0"
 # the ppsN whose /sys/class/pps/ppsN/name matches its /dev/ptpN).
 gpsd_state: started
 gpsd_enabled: true
-gpsd_devices: "/dev/ttyS7 /dev/pps2"
+gpsd_devices: "/dev/ttyS7"
 gpsd_baud: "115200"
 gpsd_options: "-s {{ gpsd_baud }} -n"
 
@@ -94,16 +94,29 @@ chrony_servers:
   - ntp4.npl.co.uk
   - ntp5.npl.co.uk
   - time.cloudflare.com
+  - time.conorrobinson.ie
 
 chrony_server_options: iburst xleave
 
-# NIC-PHC discipline pipeline. Each profile is a file in vars/gm_pipelines/
-# setting the gm_*_enabled flags and the services' options; switch profiles
-# by changing this one variable (or -e gm_pipeline=...) and redeploying with
-# --tags ptp,monitoring.
-#   timecard-ts2phc   hardware: Timecard SMA PPS -> i226 SDP1 -> ts2phc
-#   timecard-phc2sys  software: chrony -> CLOCK_REALTIME -> phc2sys
-gm_pipeline: timecard-ts2phc
+# NIC-PHC discipline. The Timecard's SMA PPS output is cabled to the
+# TimeNIC's SDP1; ts2phc hardware-timestamps the edges and disciplines the
+# NIC PHC, which ptp4l then serves to clients.
+#
+#   GNSS -> Timecard FPGA PHC -> SMA "OUT: PHC" -> i226 SDP1 -> ts2phc
+#        -> NIC PHC (enp1s0) -> ptp4l -> network
+#
+# Sink, presync source and pin index come from
+# roles/linuxptp/defaults/main/ts2phc.yml; override here if the cabling
+# changes. (This replaces the old gm_pipeline switch, whose profile files
+# under vars/gm_pipelines/ were removed in a9617f1 -- with the phc2sys
+# template gone too, the software baseline is not currently deployable.)
+ts2phc_enabled: true
+
+# Every service running a binary from the linuxptp build; the role's
+# handler restarts these after a rebuild.
+linuxptp_managed_services:
+  - ptp4l
+  - ts2phc
 
 # Grandmaster-specific ptp4l.conf directives (appended to the shared header
 # in roles/ptp4l/templates/ptp4l.conf.j2).
@@ -128,11 +141,9 @@ ptp4l_conf_extra: |
   # Announce message rate: 2^0 = 1 msg/sec
   logAnnounceInterval 0
 
-# ts2phc/phc2sys options live in the pipeline profile files under
-# vars/gm_pipelines/ (see gm_pipeline above). The hardware path needs the
-# igc-ppsfix driver loaded, an SMA cable from Timecard PPS OUT to TimeNIC
-# PPS IN, and timecard_sma routing "OUT: PHC" on the cabled connector
-# (bench-check: testptp shows extts events).
+# ts2phc needs the igc-ppsfix driver loaded, an SMA cable from Timecard PPS
+# OUT to TimeNIC PPS IN, and timecard_sma routing "OUT: PHC" on the cabled
+# connector (bench-check: testptp shows extts events).
 
 # Monitoring stack (Prometheus + exporters) running in Docker. Grafana
 # lives on the homelab Grafana server, which points a datasource (uid

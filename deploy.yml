@@ -4,7 +4,7 @@
 # roles so "Run timecard-sma" (SMA routing + kernel PPS enable) fires before
 # ts2phc/ptp4l restart.
 - name: Deploy PTP grandmaster
-  hosts: ptp_server
+  hosts: server
   become: true
 
   pre_tasks:
@@ -30,23 +30,23 @@
         name: chrony
       tags: [chrony]
 
-    - name: Install igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/).
-      ansible.builtin.import_role:
-        name: dkms_module
-      when: igc_ppsfix_enabled | default(false)
-      tags: [dkms]
-      vars:
-        dkms_name: igc
-        dkms_display: igc-ppsfix
-        dkms_version: "{{ igc_ppsfix_version }}"
-        dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
-        dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
-        dkms_reboot_pkg: igc-ppsfix-dkms
-        dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
-        dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
+    # - name: Install igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/).
+    #   ansible.builtin.import_role:
+    #     name: dkms_module
+    #   when: igc_ppsfix_enabled | default(false)
+    #   tags: [dkms]
+    #   vars:
+    #     dkms_name: igc
+    #     dkms_display: igc-ppsfix
+    #     dkms_version: "{{ igc_ppsfix_version }}"
+    #     dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
+    #     dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
+    #     dkms_reboot_pkg: igc-ppsfix-dkms
+    #     dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
+    #     dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
 
 - name: Deploy PTP clients
-  hosts: ptp_clients
+  hosts: clients
   become: true
 
   pre_tasks:

@@ -10,16 +10,22 @@
     state: absent
   notify: Restart chrony
 
-- name: Customize other chrony configuration.
+- name: Customize chrony configuration.
   ansible.builtin.template:
-    src: "templates/{{ item }}.j2"
+    src: "{{ item }}.j2"
     dest: "/etc/chrony/conf.d/{{ item }}"
-    mode: 0644
-  notify: Restart chrony
-  with_items:
+    mode: "0644"
+  loop:
     - allow.conf
     - refclock.conf
-    - servers.sources
+  notify: Restart chrony
+
+- name: Deploy chrony sources.
+  ansible.builtin.template:
+    src: servers.sources.j2
+    dest: /etc/chrony/sources.d/servers.sources
+    mode: "0644"
+  notify: Reload chrony sources
 
 - name: Ensure chrony is running.
   ansible.builtin.service:
