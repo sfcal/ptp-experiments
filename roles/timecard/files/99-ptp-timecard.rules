@@ -1,0 +1,8 @@
+# Managed by Ansible (roles/timecard).
+# Stable name for the Timecard PHC. Raw /dev/ptpN numbering follows driver
+# probe order and reshuffles when igc and ptp_ocp race at boot -- on the
+# 2026-08-25 reboot the timecard moved ptp2 -> ptp1 and chrony spent an
+# hour disciplining a free-running NIC PHC. DRIVERS walks up the parent
+# chain to the PCI device's driver, so this matches the (single) ptp_ocp
+# clock regardless of numbering.
+ACTION=="add", SUBSYSTEM=="ptp", DRIVERS=="ptp_ocp", SYMLINK+="ptp-timecard"

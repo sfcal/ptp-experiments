@@ -663,6 +663,7 @@ struct ptp_ocp {
 	struct system_time_snapshot snapshot;
 	u64			ptm_t1_prev;
 	u64			ptm_t4_prev;
+	struct mutex		ptm_lock;	/* PTM dialog + t1/t4_prev */
 };
 
 static bool
@@ -876,6 +877,9 @@ static void ptp_ocp_link_child(struct ptp_ocp *bp, const char *name,
 			       const char *link);
 
 static int ptp_ocp_art_board_init(struct ptp_ocp *bp, struct ocp_resource *r);
+
+static void ptp_ocp_disable_ptm(struct ptp_ocp *bp);
+static void ptp_ocp_enable_ptm(struct ptp_ocp *bp);
 
 static const struct ocp_attr_group fb_timecard_groups[];
 static const struct ocp_sma_op ocp_fb_sma_op;
@@ -2051,7 +2055,17 @@ ptp_ocp_syncdevicetime(ktime_t *device_time,
 	} while (count > 0);
 
 	if (count <= 0) {
-		printk("Exceeded number of tries for PTM cycle\n");
+		/*
+		 * The requester FSM has no timeout of its own: a lost PTM
+		 * response leaves it BUSY forever, and TRIGGER writes are
+		 * ignored while BUSY, so every subsequent cycle would also
+		 * time out.  Reset and re-arm the requester (which also
+		 * refreshes the stored t1/t4 pair) and discard this sample.
+		 */
+		dev_warn_ratelimited(&bp->pdev->dev,
+				     "PTM cycle timed out, resetting requester\n");
+		ptp_ocp_disable_ptm(bp);
+		ptp_ocp_enable_ptm(bp);
 		return -ETIMEDOUT;
 	}
 
@@ -2066,8 +2080,18 @@ ptp_ocp_syncdevicetime(ktime_t *device_time,
 
 	/* t3-t2 from downstream port */
 	prop_delay = ioread32(&reg->link_delay);
-	/* PTM Master Time formula */
-	ptm_master_time = t2_curr - (((bp->ptm_t4_prev - bp->ptm_t1_prev) - prop_delay) >> 1);
+	/*
+	 * PTM Master Time at t1.  t1/t4 are latched at the requester's
+	 * internal reference plane, not the pins: the request reaches the
+	 * pins phy_tx_delay after t1 and the response reaches the latch
+	 * phy_rx_delay after the pins (the gateware exports both as
+	 * constants and does not apply them itself).  The upstream flight
+	 * time from t1 is therefore
+	 * ((t4 - t1) - (t3 - t2) + phy_tx_delay - phy_rx_delay) / 2.
+	 */
+	ptm_master_time = t2_curr -
+		(((bp->ptm_t4_prev - bp->ptm_t1_prev) - prop_delay +
+		  ioread32(&reg->phy_tx_delay) - ioread32(&reg->phy_rx_delay)) >> 1);
 
 	*device_time = t1;
 
@@ -2099,11 +2123,17 @@ ptp_ocp_getcrosststamp(struct ptp_clock_info *ptp_info,
         	struct system_device_crosststamp *cts)
 {
 	struct ptp_ocp *bp = container_of(ptp_info, struct ptp_ocp, ptp_info);
+	int err;
+
 	if (!bp->pdev->ptm_enabled)
 		return 0;
 
-	return get_device_system_crosststamp(ptp_ocp_syncdevicetime,
+	/* one dialog at a time: ctrl, snapshot and the t1/t4 pair are shared */
+	mutex_lock(&bp->ptm_lock);
+	err = get_device_system_crosststamp(ptp_ocp_syncdevicetime,
                          bp, &bp->snapshot, cts);
+	mutex_unlock(&bp->ptm_lock);
+	return err;
 }
 #else
 static int
@@ -7881,7 +7911,7 @@ ptp_ocp_disable_ptm(struct ptp_ocp *bp)
 	} while (count > 0);
 
 	if (!count) {
-		dev_err(&bp->pdev->dev, "PTM not disabled: Status = 0x%X \n", status);
+		dev_err_ratelimited(&bp->pdev->dev, "PTM not disabled: Status = 0x%X \n", status);
 	}
 }
 
@@ -7900,16 +7930,24 @@ ptp_ocp_enable_ptm(struct ptp_ocp *bp)
 		count = 100;
 		do {
 			status = ioread32(&reg->status);
-			if ((status & PTM_STATUS_BUSY) == 0)
+			if ((status & PTM_STATUS_BUSY) == 0 &&
+			    (status & PTM_STATUS_VALID))
 				break;
 			count--;
 		} while (count > 0);
 
 		if (count)
-			continue;
+			break;
 
-		dev_err(&bp->pdev->dev, "Enable and trigger PTM failed: Status = 0x%X, try: %d\n", status, 2 - try);
+		dev_err_ratelimited(&bp->pdev->dev, "Enable and trigger PTM failed: Status = 0x%X, try: %d\n", status, 2 - try);
   	}
+	if (count <= 0)
+		return;
+
+	/*
+	 * Only a completed (VALID) dialog leaves a coherent t1/t4 pair; a
+	 * failed one has re-latched t1 while t4 still holds an older value.
+	 */
 	bp->ptm_t4_prev = (((u64) ioread32(&reg->t4_time[0]) << 32) |
 		(ioread32(&reg->t4_time[1]) & 0xffffffff));
 
@@ -8092,6 +8130,7 @@ ptp_ocp_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 #endif
 		if (err)
 			goto out;
+		mutex_init(&bp->ptm_lock);
 		ptp_ocp_disable_ptm(bp);
 		ptp_ocp_enable_ptm(bp);
 	} else {

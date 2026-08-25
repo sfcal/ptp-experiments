@@ -55,15 +55,29 @@ gpsd_exporter_pps_bucket_count: 40
 timecard_device: ocp0
 timecard_sma_wait_timeout: 30  # seconds to wait for the sysfs node at boot
 
-# UTC-TAI offset the FPGA applies when steering the PHC from GNSS TOD. The
-# TAP PTM image boots with 0 (PHC would run in UTC); the PTP timescale and
-# chrony's 'tai' refclock option both need the PHC in TAI. 37 since 2017;
-# bump on the next leap second.
-timecard_utc_tai_offset: 37
+# UTC-TAI handling: none needed -- the FPGA TOD engine applies the leap
+# offset itself from the GNSS receiver's UBX leap-second field, so the
+# PHC lands in TAI on its own (verified 2026-08-25; on a COLD GNSS start
+# the leap data can take ~12.5 min to arrive, during which the tai
+# refclocks falsetick and then self-heal). timecard_utc_tai_offset is
+# retired ('utc_tai_offset' never affected the PHC -- IRIG/DCF outputs
+# only), which leaves timecard-sma.sh's guarded offset block inert.
+# Known hazard, handled by hand if it recurs: 'tod_correction' is an
+# extra live TOD adjustment whose value SURVIVES WARM REBOOTS -- a stray
+# 37 written there on the bench put the PHC at UTC+74. If the tai
+# refclocks ever read a multiple of ~37 s off, check it and zero it.
 timecard_sma:
   sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
   sma2: "OUT: 10Mhz"
   sma3: "OUT: PHC"     
+
+# Arm the Mu's TGPIO 1PPS output on edge-connector pin 123 (GPP_B14 =
+# TIME_SYNC1 = ACPI INTC1024) at boot, via a udev rule. The rule arms every
+# pps-gen device on purpose -- the index is not stable and there is no other
+# attribute to match on. Output is a 1 Hz 50%-duty square wave, not a narrow
+# pulse, with edges on the second boundary. See the "TGPIO 1PPS on
+# LattePanda Mu pin 123" note.
+tgpio_pps_enabled: true
 
 # Enable NIC hardware timestamping for NTP clients (hwtimestamp * in
 # refclock.conf).
@@ -72,11 +86,17 @@ chrony_hwtimestamp: true
 # Refclock to be used as a time source.
 # See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
 chrony_refclock: |
-  # /dev/ptp2 is Timecard PHC. :nocrossts removes PTM 
-  refclock PHC /dev/ptp2:nocrossts poll 0 refid AC tai prefer
-  refclock PHC /dev/ptp2 poll 0 refid PTM tai noselect
+  # /dev/ptp-timecard is the udev symlink to the Timecard PHC
+  # (roles/timecard files/99-ptp-timecard.rules) -- raw /dev/ptpN numbers
+  # follow probe order and moved under us on the 2026-08-25 reboot,
+  # leaving chrony disciplining a free-running NIC PHC at +37 s.
+  # :nocrossts removes PTM
+  refclock PHC /dev/ptp-timecard:nocrossts poll 0 refid AC tai noselect
+  refclock PHC /dev/ptp-timecard poll 0 dpoll -5 refid PTM tai prefer
 
   # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
+  # Still a raw /dev/ptpN (correct-by-luck after the 2026-08-25
+  # renumbering); update by hand if probe order changes again.
   refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
 
   # Uncomment to log timing statistics.

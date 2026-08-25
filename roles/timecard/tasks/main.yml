@@ -2,6 +2,20 @@
 - name: Build ptp_ocp driver from source.
   ansible.builtin.include_tasks: driver.yml
 
+- name: Deploy the Timecard PHC udev symlink rule (/dev/ptp-timecard).
+  ansible.builtin.copy:
+    src: 99-ptp-timecard.rules
+    dest: /etc/udev/rules.d/99-ptp-timecard.rules
+    owner: root
+    group: root
+    mode: "0644"
+  register: timecard_udev_rule
+
+- name: Reload udev and create the ptp-timecard symlink.
+  ansible.builtin.shell:
+    cmd: udevadm control --reload && udevadm trigger --subsystem-match=ptp --action=add
+  when: timecard_udev_rule.changed
+
 - name: Deploy Timecard SMA routing script.
   ansible.builtin.template:
     src: timecard-sma.sh.j2

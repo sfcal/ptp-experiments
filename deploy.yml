@@ -20,6 +20,12 @@
         name: timecard
       tags: [timecard]
 
+    - name: Arm the TGPIO 1PPS generator on pin 123.
+      ansible.builtin.import_role:
+        name: tgpio_pps
+      when: tgpio_pps_enabled | default(false)
+      tags: [tgpio]
+
     - name: Build linuxptp and configure ptp4l/ts2phc.
       ansible.builtin.import_role:
         name: linuxptp

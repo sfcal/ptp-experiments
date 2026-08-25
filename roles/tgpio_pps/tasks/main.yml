@@ -1,0 +1,26 @@
+---
+# The TGPIO 1PPS generator on edge-connector pin 123. The "TGPIO 1PPS on
+# LattePanda Mu pin 123" note has the hardware write-up: which ACPI device
+# drives which pad, why the pps-genN index is not stable, and how to check
+# that the block is actually toggling.
+#
+# No modules-load.d drop-in and no systemd unit: pps_gen_tio autoloads from
+# the ACPI modalias via /usr/lib/udev/rules.d/80-drivers.rules, and arming a
+# pps-gen device is a single sysfs write that udev does natively.
+
+- name: Deploy the TGPIO 1PPS udev rule.
+  ansible.builtin.copy:
+    src: 99-tgpio-pps.rules
+    dest: /etc/udev/rules.d/99-tgpio-pps.rules
+    owner: root
+    group: root
+    mode: "0644"
+  register: tgpio_pps_udev
+
+# --action=add is load-bearing: udevadm trigger defaults to 'change', which
+# would not match the rule's ACTION=="add" and would converge nothing. This
+# also mirrors boot, where systemd-udev-trigger.service uses --action=add.
+- name: Reload udev and arm the TGPIO generators.
+  ansible.builtin.shell:
+    cmd: udevadm control --reload && udevadm trigger --subsystem-match=pps-gen --action=add
+  when: tgpio_pps_udev.changed

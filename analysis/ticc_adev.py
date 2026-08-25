@@ -38,6 +38,11 @@ def _(mo):
     Select **multiple files** to compare captures side by side — every plot
     overlays the selected datasets. With nothing selected, all `.log` files
     in `data/` are loaded.
+
+    The **samples** slider limits every dataset to that many readings from the
+    start of the capture; at its far right it uses all available. Truncation
+    happens before outlier removal, so the MAD filter sees only the selected
+    window.
     """)
     return
 
@@ -106,9 +111,42 @@ def _(Path, file_browser, mo, np):
 
 
 @app.cell
-def _(np, outlier_k, raw_data, remove_outliers):
+def _(mo, raw_data):
+    _max_n = max(_v.size for _v in raw_data.values())
+    sample_limit = mo.ui.slider(
+        start=8,
+        stop=_max_n,
+        step=1,
+        value=_max_n,
+        label="Samples to use",
+        show_value=True,
+        include_input=True,
+        full_width=True,
+    )
+    sample_limit
+    return (sample_limit,)
+
+
+@app.cell
+def _(mo, raw_data, sample_limit):
+    _max_n = max(_v.size for _v in raw_data.values())
+    mo.md(
+        f"_Using **all {_max_n:,}** available readings._"
+        if sample_limit.value >= _max_n
+        else f"_Using the first **{sample_limit.value:,}** of {_max_n:,} readings; "
+        "a file with fewer contributes all of its own._"
+    )
+    return
+
+
+@app.cell
+def _(np, outlier_k, raw_data, remove_outliers, sample_limit):
     datasets = {}  # name -> (phase array, n_removed)
-    for _name, _raw in raw_data.items():
+    for _name, _full in raw_data.items():
+        # Truncate before the outlier filter so the MAD reflects the window
+        # actually being analysed. Slicing past the end is a no-op, so short
+        # files simply contribute everything they have.
+        _raw = _full[: sample_limit.value]
         if remove_outliers.value:
             _med = np.median(_raw)
             _mad = np.median(np.abs(_raw - _med))
