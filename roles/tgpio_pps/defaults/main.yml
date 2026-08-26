@@ -1,6 +1,7 @@
 ---
 # Arm the Mu's TGPIO 1PPS generator (edge-connector pin 123) at boot.
-# Grandmaster only -- needs the beta TGPIO BIOS. deploy.yml gates the whole
-# role on tgpio_pps_enabled. See the "TGPIO 1PPS on LattePanda Mu pin 123"
-# note for the hardware write-up.
+# Grandmaster only -- needs the beta TGPIO BIOS, whose flaky ACPI gate the
+# role also bypasses with an early-initrd SSDT (see tasks/main.yml).
+# deploy.yml gates the whole role on tgpio_pps_enabled. See the "TGPIO 1PPS
+# on LattePanda Mu pin 123" note for the hardware write-up.
 tgpio_pps_enabled: false

@@ -4,26 +4,130 @@
 # drives which pad, why the pps-genN index is not stable, and how to check
 # that the block is actually toggling.
 #
-# No modules-load.d drop-in and no systemd unit: pps_gen_tio autoloads from
-# the ACPI modalias via /usr/lib/udev/rules.d/80-drivers.rules, and arming a
-# pps-gen device is a single sysfs write that udev does natively.
+# No modules-load.d drop-in: pps_gen_tio autoloads from the ACPI modalias
+# via /usr/lib/udev/rules.d/80-drivers.rules. Arming is a single sysfs
+# write, done by tgpio-pps-arm.service once chrony has finished its boot
+# steps (see below -- arming earlier flips a phase coin).
 
-- name: Deploy the TGPIO 1PPS udev rule.
+# The TGPIO beta BIOS seeds the INTC1024 ACPI gate (GNVS byte TGEB) from its
+# "Enable Timed GPIO1" setup option nondeterministically: the option is
+# Enabled in every NVRAM copy, but POST writes 0 on most boots and the
+# device never enumerates -- it has flipped in both directions across
+# unattended warm reboots with identical NVRAM. The TIME_SYNC1 block and
+# the GPP_B14 pad mux are programmed regardless; only the ACPI declaration
+# goes missing. Until DFRobot ships a fixed BIOS, re-declare the device via
+# the kernel's ACPI table-upgrade mechanism: the compiled SSDT in an
+# uncompressed cpio under kernel/firmware/acpi/, prepended to the initrd by
+# GRUB. Needs CONFIG_ACPI_TABLE_UPGRADE=y and lockdown inactive (Secure
+# Boot disabled) -- both hold on the Mu, and the latter is why this must
+# not be ported to a Secure Boot host as-is.
+
+- name: Install the ACPI compiler for the gate-bypass SSDT.
+  ansible.builtin.apt:
+    name: acpica-tools
+    state: present
+
+- name: Create the SSDT work directory.
+  ansible.builtin.file:
+    path: /var/lib/tgpio
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the gate-bypass SSDT source.
   ansible.builtin.copy:
-    src: 99-tgpio-pps.rules
-    dest: /etc/udev/rules.d/99-tgpio-pps.rules
+    src: ssdt-tgpio1.asl
+    dest: /var/lib/tgpio/ssdt-tgpio1.asl
     owner: root
     group: root
     mode: "0644"
-  register: tgpio_pps_udev
+  register: tgpio_ssdt_src
 
-# --action=add is load-bearing: udevadm trigger defaults to 'change', which
-# would not match the rule's ACTION=="add" and would converge nothing. This
-# also mirrors boot, where systemd-udev-trigger.service uses --action=add.
-- name: Reload udev and arm the TGPIO generators.
+- name: Check for a previously compiled SSDT.
+  ansible.builtin.stat:
+    path: /var/lib/tgpio/ssdt-tgpio1.aml
+  register: tgpio_ssdt_aml
+
+- name: Compile the gate-bypass SSDT.
+  ansible.builtin.command:
+    cmd: iasl -ve -p /var/lib/tgpio/ssdt-tgpio1 /var/lib/tgpio/ssdt-tgpio1.asl
+  when: tgpio_ssdt_src.changed or not tgpio_ssdt_aml.stat.exists
+  register: tgpio_ssdt_compile
+
+- name: Check for the early-initrd ACPI archive.
+  ansible.builtin.stat:
+    path: /boot/acpi-tgpio.cpio
+  register: tgpio_cpio
+
+# The archive must be uncompressed newc cpio and must live in /boot: GRUB's
+# 10_linux resolves GRUB_EARLY_INITRD_LINUX_CUSTOM names relative to the
+# kernel's directory.
+- name: Pack the SSDT into the early-initrd ACPI archive.
   ansible.builtin.shell:
-    cmd: udevadm control --reload && udevadm trigger --subsystem-match=pps-gen --action=add
-  when: tgpio_pps_udev.changed
+    cmd: |
+      set -euo pipefail
+      staging=$(mktemp -d)
+      trap 'rm -rf "$staging"' EXIT
+      mkdir -p "$staging/kernel/firmware/acpi"
+      cp /var/lib/tgpio/ssdt-tgpio1.aml "$staging/kernel/firmware/acpi/"
+      (cd "$staging" && find kernel | cpio --quiet -H newc -o) > /boot/acpi-tgpio.cpio
+    executable: /bin/bash
+  when: tgpio_ssdt_compile.changed or not tgpio_cpio.stat.exists
+  notify: Update grub
+
+- name: Point GRUB at the ACPI archive.
+  ansible.builtin.copy:
+    src: 99-tgpio-acpi.cfg
+    dest: /etc/default/grub.d/99-tgpio-acpi.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update grub
+
+# Boot arming moved from udev-add to a post-sync oneshot: udev armed at
+# ~t+4 s, which always lost the race with chrony's +-37 s TAI/UTC startup
+# steps -- the step killed the pending comparator ("Event missed"), the
+# watch re-armed from a frozen pin, and the output came back phase-inverted
+# half the time (the 0.5 s TICC offset of 2026-08-26).
+- name: Remove the legacy udev-add arm rule.
+  ansible.builtin.file:
+    path: /etc/udev/rules.d/99-tgpio-pps.rules
+    state: absent
+  register: tgpio_pps_udev_removed
+
+- name: Reload udev after removing the arm rule.
+  ansible.builtin.command:
+    cmd: udevadm control --reload
+  when: tgpio_pps_udev_removed.changed
+
+- name: Deploy the post-sync arm script.
+  ansible.builtin.copy:
+    src: tgpio-pps-arm.sh
+    dest: /usr/local/bin/tgpio-pps-arm.sh
+    owner: root
+    group: root
+    mode: "0755"
+  register: tgpio_arm_script
+
+- name: Deploy the post-sync arm unit.
+  ansible.builtin.copy:
+    src: tgpio-pps-arm.service
+    dest: /etc/systemd/system/tgpio-pps-arm.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tgpio_arm_unit
+
+# Restart/start at steady state is harmless: writing enable=1 to an
+# already-armed generator is a no-op in the driver, so this never touches
+# the phase of a running output.
+- name: Enable and start the post-sync arm service.
+  ansible.builtin.systemd_service:
+    name: tgpio-pps-arm
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if (tgpio_arm_script.changed or tgpio_arm_unit.changed) else 'started' }}"
 
 # pps_gen_tio disables itself permanently on a single missed event and
 # nothing re-arms it (the udev rule only fires on add). The watcher tails

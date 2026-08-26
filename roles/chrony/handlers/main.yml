@@ -3,3 +3,8 @@
   ansible.builtin.service:
     name: chrony
     state: restarted
+
+- name: Reload chrony sources
+  ansible.builtin.command:
+    cmd: chronyc reload sources
+  changed_when: true

@@ -1,0 +1,13 @@
+# Managed by Ansible (roles/tgpio_pps).
+[Unit]
+Description=Arm Intel TGPIO PPS generator after time sync
+After=chrony.service
+Wants=chrony.service
+
+[Service]
+ExecStart=/usr/local/bin/tgpio-pps-arm.sh
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
