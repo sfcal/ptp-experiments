@@ -1,0 +1,9 @@
+# Continuous sync of TICC captures from the GM into the repo.
+#   mutagen project start      # begin syncing (run from repo root)
+#   mutagen sync list          # status / conflicts
+#   mutagen project terminate  # stop
+sync:
+  ticc-logs:
+    alpha: "sfcal@10.3.30.123:~/TICC"
+    beta: "./analysis/data/raw"
+    mode: "one-way-safe"

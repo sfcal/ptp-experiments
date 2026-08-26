@@ -6,14 +6,26 @@ plots, histograms, ADEV / OADEV / MDEV / HDEV, and TDEV (via
 
 ## Capturing data
 
-On the measurement box, log the TICC serial output with picocom:
+On the GM (`timeserver`, 10.3.30.123), log the TICC serial output with picocom
+into `~/TICC/`:
 
 ```bash
-sudo picocom -b 115200 --logfile ticc.log /dev/ttyACM0
+sudo picocom -b 115200 --logfile ~/TICC/<name>.log /dev/ttyACM0
 ```
 
-Copy the resulting log into `analysis/data/`. The parser skips the `#` header
-lines and any partial/garbage lines, so raw picocom logs work as-is.
+Logs sync into `analysis/data/raw/` automatically via mutagen (session defined
+in `mutagen.yml` at the repo root):
+
+```bash
+mutagen project start      # begin continuous sync (run from repo root)
+mutagen sync list          # status / conflicts
+mutagen project terminate  # stop
+```
+
+The sync is one-way-safe (GM → local): local edits under `data/raw/` are never
+overwritten and show up as conflicts instead. Curated/trimmed segments are
+still promoted from `data/raw/` to `data/` by hand. The parser skips the `#`
+header lines and any partial/garbage lines, so raw picocom logs work as-is.
 
 ## Running
 

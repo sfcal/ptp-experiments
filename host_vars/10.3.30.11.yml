@@ -1,4 +1,0 @@
----
-# Onboard NIC: the PHC lives in the BCM54213 PHY behind ~214 us MDIO reads;
-# chrony's median-filtered PHC refclock still holds CLOCK_REALTIME to
-# ~63 ns rms here (2026-08-04).

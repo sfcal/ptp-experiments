@@ -91,16 +91,16 @@ chrony_refclock: |
   # follow probe order and moved under us on the 2026-08-25 reboot,
   # leaving chrony disciplining a free-running NIC PHC at +37 s.
   # :nocrossts removes PTM
-  refclock PHC /dev/ptp-timecard:nocrossts poll 0 refid AC tai noselect
-  refclock PHC /dev/ptp-timecard poll 0 dpoll -5 refid PTM tai prefer
+  refclock PHC /dev/ptp-timecard:nocrossts poll 0 dpoll -5 refid AC tai prefer
+  refclock PHC /dev/ptp-timecard poll 0 dpoll -5 refid PTM tai noselect
 
   # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
   # Still a raw /dev/ptpN (correct-by-luck after the 2026-08-25
   # renumbering); update by hand if probe order changes again.
-  refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
+  #refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
 
   # Uncomment to log timing statistics.
-  #log tracking measurements statistics
+  log tracking measurements statistics
 
 # Hosts allowed to query chrony for NTP time.
 # See: https://chrony-project.org/doc/3.4/chrony.conf.html#allow

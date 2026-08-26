@@ -14,3 +14,6 @@ collections/
 
 # macOS
 .DS_Store
+
+# Mutagen
+mutagen.yml.lock
