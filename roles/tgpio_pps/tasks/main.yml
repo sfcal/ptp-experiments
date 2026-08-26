@@ -24,3 +24,31 @@
   ansible.builtin.shell:
     cmd: udevadm control --reload && udevadm trigger --subsystem-match=pps-gen --action=add
   when: tgpio_pps_udev.changed
+
+# pps_gen_tio disables itself permanently on a single missed event and
+# nothing re-arms it (the udev rule only fires on add). The watcher tails
+# the kernel journal and re-arms on the driver's disable message.
+- name: Deploy the TGPIO re-arm watcher script.
+  ansible.builtin.copy:
+    src: tgpio-pps-watch.sh
+    dest: /usr/local/bin/tgpio-pps-watch.sh
+    owner: root
+    group: root
+    mode: "0755"
+  register: tgpio_watch_script
+
+- name: Deploy the TGPIO re-arm watcher unit.
+  ansible.builtin.copy:
+    src: tgpio-pps-watch.service
+    dest: /etc/systemd/system/tgpio-pps-watch.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tgpio_watch_unit
+
+- name: Enable and start the TGPIO re-arm watcher.
+  ansible.builtin.systemd_service:
+    name: tgpio-pps-watch
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if (tgpio_watch_script.changed or tgpio_watch_unit.changed) else 'started' }}"

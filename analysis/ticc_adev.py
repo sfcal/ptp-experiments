@@ -175,7 +175,7 @@ def _(datasets, mo, np, tau0_input):
                 "file": _name,
                 "readings": f"{_phase.size} ({_n_removed} removed)",
                 "duration": f"{_phase.size * _tau0:.0f} s",
-                "mean interval": f"{_phase.mean():.11f} s",
+                "mean interval": f"{_phase.mean() * 1e9:.3f} ns",
                 "std dev": f"{_resid_ns.std():.3f} ns",
                 "peak-to-peak": f"{np.ptp(_resid_ns):.3f} ns",
             }

@@ -1,0 +1,12 @@
+# Managed by Ansible (roles/tgpio_pps).
+[Unit]
+Description=Re-arm Intel TGPIO PPS generator after driver self-disable
+After=systemd-journald.service
+
+[Service]
+ExecStart=/usr/local/bin/tgpio-pps-watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
