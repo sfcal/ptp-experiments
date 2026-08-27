@@ -1,0 +1,35 @@
+---
+- name: Ensure testptp build directory exists.
+  ansible.builtin.file:
+    path: /usr/local/src/testptp/include/linux
+    state: directory
+    mode: "0755"
+
+# testptp lives in the kernel tree and only compiles reliably against the
+# linux/ptp_clock.h it shipped with -- distro kernel headers older than the
+# source miss newer PTP_* ioctls. Fetch both from the same kernel tag
+# (v7.0 = Ubuntu 26.04's kernel) and build with a local include path so
+# they always match.
+- name: Fetch testptp.c and its matching UAPI header.
+  ansible.builtin.get_url:
+    url: "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/{{ item.path }}?h=v7.0"
+    dest: "/usr/local/src/testptp/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - path: tools/testing/selftests/ptp/testptp.c
+      dest: testptp.c
+    - path: include/uapi/linux/ptp_clock.h
+      dest: include/linux/ptp_clock.h
+
+- name: Build testptp.
+  ansible.builtin.command:
+    cmd: gcc -Wall -O2 -I include -o testptp testptp.c -lrt
+    chdir: /usr/local/src/testptp
+    creates: /usr/local/src/testptp/testptp
+
+- name: Install testptp.
+  ansible.builtin.copy:
+    src: /usr/local/src/testptp/testptp
+    dest: "/usr/local/sbin/testptp"
+    remote_src: true
+    mode: "0755"

@@ -13,13 +13,13 @@
 - name: Clone gpsd-prometheus-exporter.
   ansible.builtin.git:
     repo: https://github.com/brendanbank/gpsd-prometheus-exporter.git
-    dest: /opt/gpsd-prometheus-exporter
+    dest: /usr/local/src/gpsd-prometheus-exporter
     version: "{{ gpsd_exporter_version }}"
 
 - name: Install gpsd_exporter script.
   ansible.builtin.copy:
-    src: /opt/gpsd-prometheus-exporter/gpsd_exporter.py
-    dest: /usr/local/bin/gpsd_exporter.py
+    src: /usr/local/src/gpsd-prometheus-exporter/gpsd_exporter.py
+    dest: /usr/local/sbin/gpsd_exporter.py
     remote_src: true
     owner: root
     group: root

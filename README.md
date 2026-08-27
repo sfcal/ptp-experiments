@@ -65,6 +65,25 @@ profile reused the name.
 - `files/dashboards/` — Grafana dashboard JSON, source of record.
 - `analysis/` — marimo notebook for TICC ADEV analysis (not deployed).
 
+## Install paths
+
+Hardcoded in the roles, not variables — there is one correct answer per
+class (FHS 3.0):
+
+- `/usr/local/sbin/` — everything installed: the linuxptp binaries (`make
+  install`, default prefix), `testptp`, the exporters, and the local
+  systemd-invoked scripts. All root-only, hence `sbin` not `bin` (3.16.1).
+- `/usr/local/src/<name>/` — local source and build trees: `linuxptp`,
+  `testptp`, `ptp_ocp` (DRV), `gpsd-prometheus-exporter`, `tgpio` (the
+  SSDT `.asl`/`.aml`). Built in place; only the artifact is installed.
+- `/var/cache/chrony_exporter/` — the downloaded release tarball; a
+  regenerable cache, safe to delete.
+- `/etc/` — all config (`linuxptp/`, `chrony/conf.d/`, `modprobe.d/`,
+  `udev/rules.d/`, `systemd/system/`, `default/grub.d/`).
+- `/opt/` — DKMS source trees only (`igc-ppsfix`, `ptp-ocp-gnsspps`).
+- Kernel modules go where the kernel expects them:
+  `/lib/modules/<kver>/updates/`.
+
 ## Stable device names
 
 `/dev/ptpN` numbering depends on probe order, so nothing references it:

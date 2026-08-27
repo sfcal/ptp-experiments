@@ -15,16 +15,19 @@
 - name: Clone linuxptp source.
   ansible.builtin.git:
     repo: "{{ linuxptp_repo }}"
-    dest: "{{ linuxptp_build_location }}"
+    dest: "/usr/local/src/linuxptp"
     version: "{{ linuxptp_version }}"
   register: linuxptp_src
 
 - name: Build and install linuxptp.
   ansible.builtin.shell:
     cmd: make -j "$(nproc)" && make install
-    chdir: "{{ linuxptp_build_location }}"
+    chdir: "/usr/local/src/linuxptp"
   when: linuxptp_src.changed
   notify: Restart linuxptp services
+
+- name: Install testptp.
+  ansible.builtin.import_tasks: testptp.yml
 
 - name: Configure ptp4l.
   ansible.builtin.import_tasks: ptp4l.yml

@@ -9,7 +9,7 @@ Type=simple
 # Unprivileged: monitoring commands to chronyd's loopback UDP cmdport only;
 # metrics on the default :9123.
 DynamicUser=yes
-ExecStart=/usr/local/bin/chrony_exporter --chrony.address=127.0.0.1:323 --collector.sources
+ExecStart=/usr/local/sbin/chrony_exporter --chrony.address=127.0.0.1:323 --collector.sources
 Restart=always
 RestartSec=3
 

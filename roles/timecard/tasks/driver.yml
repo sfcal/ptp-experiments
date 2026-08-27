@@ -12,14 +12,14 @@
 
 - name: Create the driver build directory.
   ansible.builtin.file:
-    path: "/opt/ptp_ocp"
+    path: "/usr/local/src/ptp_ocp"
     state: directory
     mode: "0755"
 
 - name: Copy the driver sources.
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/DRV/{{ item }}"
-    dest: "/opt/ptp_ocp/{{ item }}"
+    dest: "/usr/local/src/ptp_ocp/{{ item }}"
     mode: preserve
   loop:
     - Makefile
@@ -36,7 +36,7 @@
 - name: Build and install ptp_ocp.ko for the running kernel.
   ansible.builtin.command:
     cmd: ./remake install
-    chdir: "/opt/ptp_ocp"
+    chdir: "/usr/local/src/ptp_ocp"
   when: ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists
 
 # Rewrite the netboot-staged blacklist now that the working driver is on

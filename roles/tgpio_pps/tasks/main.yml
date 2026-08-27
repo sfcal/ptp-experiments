@@ -29,7 +29,7 @@
 
 - name: Create the SSDT work directory.
   ansible.builtin.file:
-    path: /var/lib/tgpio
+    path: /usr/local/src/tgpio
     state: directory
     owner: root
     group: root
@@ -38,7 +38,7 @@
 - name: Deploy the gate-bypass SSDT source.
   ansible.builtin.copy:
     src: ssdt-tgpio1.asl
-    dest: /var/lib/tgpio/ssdt-tgpio1.asl
+    dest: /usr/local/src/tgpio/ssdt-tgpio1.asl
     owner: root
     group: root
     mode: "0644"
@@ -46,12 +46,12 @@
 
 - name: Check for a previously compiled SSDT.
   ansible.builtin.stat:
-    path: /var/lib/tgpio/ssdt-tgpio1.aml
+    path: /usr/local/src/tgpio/ssdt-tgpio1.aml
   register: tgpio_ssdt_aml
 
 - name: Compile the gate-bypass SSDT.
   ansible.builtin.command:
-    cmd: iasl -ve -p /var/lib/tgpio/ssdt-tgpio1 /var/lib/tgpio/ssdt-tgpio1.asl
+    cmd: iasl -ve -p /usr/local/src/tgpio/ssdt-tgpio1 /usr/local/src/tgpio/ssdt-tgpio1.asl
   when: tgpio_ssdt_src.changed or not tgpio_ssdt_aml.stat.exists
   register: tgpio_ssdt_compile
 
@@ -70,7 +70,7 @@
       staging=$(mktemp -d)
       trap 'rm -rf "$staging"' EXIT
       mkdir -p "$staging/kernel/firmware/acpi"
-      cp /var/lib/tgpio/ssdt-tgpio1.aml "$staging/kernel/firmware/acpi/"
+      cp /usr/local/src/tgpio/ssdt-tgpio1.aml "$staging/kernel/firmware/acpi/"
       (cd "$staging" && find kernel | cpio --quiet -H newc -o) > /boot/acpi-tgpio.cpio
     executable: /bin/bash
   when: tgpio_ssdt_compile.changed or not tgpio_cpio.stat.exists
@@ -104,7 +104,7 @@
 - name: Deploy the post-sync arm script.
   ansible.builtin.copy:
     src: tgpio-pps-arm.sh
-    dest: /usr/local/bin/tgpio-pps-arm.sh
+    dest: /usr/local/sbin/tgpio-pps-arm.sh
     owner: root
     group: root
     mode: "0755"
@@ -135,7 +135,7 @@
 - name: Deploy the TGPIO re-arm watcher script.
   ansible.builtin.copy:
     src: tgpio-pps-watch.sh
-    dest: /usr/local/bin/tgpio-pps-watch.sh
+    dest: /usr/local/sbin/tgpio-pps-watch.sh
     owner: root
     group: root
     mode: "0755"

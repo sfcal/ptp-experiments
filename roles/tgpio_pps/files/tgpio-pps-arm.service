@@ -5,7 +5,7 @@ After=chrony.service
 Wants=chrony.service
 
 [Service]
-ExecStart=/usr/local/bin/tgpio-pps-arm.sh
+ExecStart=/usr/local/sbin/tgpio-pps-arm.sh
 Restart=on-failure
 RestartSec=30
 

@@ -1,10 +1,10 @@
 ---
 # chrony_exporter: prebuilt Go binary from the GitHub release tarball.
 # Paths embed the version, so bumping chrony_exporter_version re-downloads
-# and reinstalls (old versions linger in /opt/chrony_exporter -- harmless).
+# and reinstalls (old versions linger in /var/cache/chrony_exporter -- harmless).
 - name: Create chrony_exporter download directory.
   ansible.builtin.file:
-    path: /opt/chrony_exporter
+    path: /var/cache/chrony_exporter
     state: directory
     mode: "0755"
 
@@ -13,21 +13,21 @@
 - name: Download chrony_exporter release tarball.
   ansible.builtin.get_url:
     url: "https://github.com/SuperQ/chrony_exporter/releases/download/v{{ chrony_exporter_version }}/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
-    dest: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/var/cache/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
     checksum: "sha256:https://github.com/SuperQ/chrony_exporter/releases/download/v{{ chrony_exporter_version }}/sha256sums.txt"
     mode: "0644"
 
 - name: Unpack chrony_exporter tarball.
   ansible.builtin.unarchive:
-    src: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
-    dest: /opt/chrony_exporter
+    src: "/var/cache/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
+    dest: /var/cache/chrony_exporter
     remote_src: true
-    creates: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
+    creates: "/var/cache/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
 
 - name: Install chrony_exporter binary.
   ansible.builtin.copy:
-    src: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
-    dest: /usr/local/bin/chrony_exporter
+    src: "/var/cache/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
+    dest: /usr/local/sbin/chrony_exporter
     remote_src: true
     owner: root
     group: root

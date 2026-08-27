@@ -19,7 +19,7 @@
 - name: Deploy Timecard SMA routing script.
   ansible.builtin.template:
     src: timecard-sma.sh.j2
-    dest: /usr/local/bin/timecard-sma.sh
+    dest: /usr/local/sbin/timecard-sma.sh
     owner: root
     group: root
     mode: "0755"

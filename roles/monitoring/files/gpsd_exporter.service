@@ -13,7 +13,7 @@ DynamicUser=yes
 # PPS histogram (gpsd_pps_histogram_bucket) span = size * count centered on
 # 0: 1000 ns x 40 = +/-20 us -- PPS asserts are timestamped by the system
 # clock at IRQ time, so interrupt latency dominates the spread.
-ExecStart=/usr/local/bin/gpsd_exporter.py --pps-histogram --pps-bucket-size 1000 --pps-bucket-count 40
+ExecStart=/usr/local/sbin/gpsd_exporter.py --pps-histogram --pps-bucket-size 1000 --pps-bucket-count 40
 Restart=always
 RestartSec=3
 

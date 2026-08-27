@@ -8,7 +8,7 @@ Before=ts2phc.service ptp4l.service gpsd.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/timecard-sma.sh
+ExecStart=/usr/local/sbin/timecard-sma.sh
 
 [Install]
 WantedBy=multi-user.target

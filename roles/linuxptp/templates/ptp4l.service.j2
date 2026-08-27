@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{ linuxptp_sbin }}/ptp4l -f /etc/linuxptp/ptp4l.conf -i {{ ptp4l_ptp_iface }}
+ExecStart=/usr/local/sbin/ptp4l -f /etc/linuxptp/ptp4l.conf -i {{ ptp4l_ptp_iface }}
 Restart=always
 RestartSec=3
 

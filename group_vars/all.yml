@@ -4,11 +4,13 @@ system_timezone: Europe/London
 # PTP runs on each host's primary NIC; override per group/host if needed.
 ptp4l_ptp_iface: "{{ network_interface }}"
 
-# linuxptp is built from source on each host for the latest features
+# linuxptp is built from source on each host for the latest features.
+# Install paths are hardcoded in the roles, deliberately not variables:
+# source builds live in /usr/local/src/<name> and install to
+# /usr/local/sbin (FHS 3.0 4.9.1/4.9.2 and 3.16.1). Only the version pins
+# below are tunable.
 linuxptp_repo: git://git.code.sf.net/p/linuxptp/code
 linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
-linuxptp_build_location: /opt/linuxptp
-linuxptp_sbin: /usr/local/sbin
 
 # igc-ppsfix DKMS driver (I226 PPS fixes). Shared here because both the
 # grandmaster (TimeNIC) and clients with i226 NICs can use it; enable per
@@ -24,6 +26,6 @@ ptp_ocp_gnsspps_version: "tap-1042bd6f-gnsspps.1"  # must match ptp-ocp-gnsspps/
 ptp_ocp_gnsspps_deploy_path: /opt/ptp-ocp-gnsspps
 
 # ptp_ocp driver built from source (DRV/): out-of-tree PTM-capable build,
-# compiled on the host by DRV's remake script (tasks/ptp_ocp.yml).
+# compiled on the host by DRV's remake script. Built in /usr/local/src/ptp_ocp
+# by roles/timecard/tasks/driver.yml; installs to /lib/modules/<kver>/updates/.
 # Supersedes the ptp-ocp-gnsspps DKMS approach.
-#ptp_ocp_deploy_path: /opt/ptp_ocp
