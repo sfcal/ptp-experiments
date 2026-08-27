@@ -37,7 +37,9 @@ def _(mo):
 
     Select **multiple files** to compare captures side by side — every plot
     overlays the selected datasets. With nothing selected, all `.log` files
-    in `data/` are loaded.
+    in `data/` are loaded. Selected files are **watched**: when a file
+    changes on disk (e.g. mutagen syncing a live capture), everything
+    downstream re-runs automatically.
 
     The **samples** slider limits every dataset to that many readings from the
     start of the capture; at its far right it uses all available. Truncation
@@ -74,11 +76,30 @@ def _(mo):
 
 
 @app.cell
-def _(Path, file_browser, mo, np):
-    def parse_ticc(path):
+def _(Path, file_browser, mo):
+    if file_browser.value:
+        _selected = [Path(_f.path) for _f in file_browser.value]
+    else:
+        _data_dir = Path(__file__).parent / "data"
+        _selected = sorted(_data_dir.glob("*.log")) if _data_dir.exists() else []
+
+    mo.stop(not _selected, mo.md("**Select one or more TICC log files above to begin.**"))
+
+    # Reactive handles: cells that read through these re-run whenever the
+    # file changes on disk (e.g. mutagen syncing in a live capture). The
+    # watchers must be created in a separate cell from the one reading them.
+    watched_files = [mo.watch.file(_p) for _p in _selected]
+    return (watched_files,)
+
+
+@app.cell
+def _(mo, np, watched_files):
+    def parse_ticc(f):
         """Return the numeric readings from a TICC/picocom log as a float array."""
         vals = []
-        for line in Path(path).read_text(errors="ignore").splitlines():
+        # FileState.read_text() decodes strictly; serial captures can contain
+        # garbage bytes, so decode leniently ourselves.
+        for line in f.read_bytes().decode(errors="ignore").splitlines():
             s = line.strip()
             if not s or s.startswith("#"):
                 continue
@@ -88,22 +109,14 @@ def _(Path, file_browser, mo, np):
                 continue  # partial first/last lines, menu echoes, etc.
         return np.asarray(vals)
 
-    if file_browser.value:
-        selected_paths = [Path(_f.path) for _f in file_browser.value]
-    else:
-        _data_dir = Path(__file__).parent / "data"
-        selected_paths = sorted(_data_dir.glob("*.log")) if _data_dir.exists() else []
-
-    mo.stop(not selected_paths, mo.md("**Select one or more TICC log files above to begin.**"))
-
     raw_data = {}
     _skipped = []
-    for _p in selected_paths:
-        _vals = parse_ticc(_p)
+    for _f in watched_files:
+        _vals = parse_ticc(_f)
         if _vals.size >= 8:
-            raw_data[_p.name] = _vals
+            raw_data[_f.name] = _vals
         else:
-            _skipped.append(f"`{_p.name}` ({_vals.size} readings)")
+            _skipped.append(f"`{_f.name}` ({_vals.size} readings)")
 
     mo.stop(not raw_data, mo.md("**No usable data in the selected file(s).**"))
     mo.md(f"_Skipped (too few readings): {', '.join(_skipped)}_" if _skipped else "")

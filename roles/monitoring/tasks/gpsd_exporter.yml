@@ -1,0 +1,43 @@
+---
+# gpsd exporter: pure-python script, cloned at a pinned tag. Copying the
+# script out of the clone keeps the clone a pristine version-pinned
+# artifact and gives systemd a stable path.
+- name: Install gpsd exporter dependencies.
+  ansible.builtin.apt:
+    name:
+      - git
+      - python3-gps
+      - python3-prometheus-client
+    state: present
+
+- name: Clone gpsd-prometheus-exporter.
+  ansible.builtin.git:
+    repo: https://github.com/brendanbank/gpsd-prometheus-exporter.git
+    dest: /opt/gpsd-prometheus-exporter
+    version: "{{ gpsd_exporter_version }}"
+
+- name: Install gpsd_exporter script.
+  ansible.builtin.copy:
+    src: /opt/gpsd-prometheus-exporter/gpsd_exporter.py
+    dest: /usr/local/bin/gpsd_exporter.py
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart gpsd exporter
+
+- name: Copy gpsd_exporter systemd unit into place.
+  ansible.builtin.copy:
+    src: gpsd_exporter.service
+    dest: /etc/systemd/system/gpsd_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart gpsd exporter
+
+- name: Ensure gpsd_exporter is running.
+  ansible.builtin.service:
+    name: gpsd_exporter
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"

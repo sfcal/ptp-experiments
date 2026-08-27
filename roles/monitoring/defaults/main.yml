@@ -1,0 +1,5 @@
+---
+# Prometheus exporters on the grandmaster, scraped over the LAN by the
+# homelab Prometheus/Grafana. Bump a version to re-download and reinstall.
+chrony_exporter_version: "0.14.0"
+gpsd_exporter_version: "v1.1.19"

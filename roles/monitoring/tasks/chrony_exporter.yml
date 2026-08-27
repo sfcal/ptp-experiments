@@ -1,0 +1,51 @@
+---
+# chrony_exporter: prebuilt Go binary from the GitHub release tarball.
+# Paths embed the version, so bumping chrony_exporter_version re-downloads
+# and reinstalls (old versions linger in /opt/chrony_exporter -- harmless).
+- name: Create chrony_exporter download directory.
+  ansible.builtin.file:
+    path: /opt/chrony_exporter
+    state: directory
+    mode: "0755"
+
+# The dest filename must stay identical to the release asset name --
+# checksum-from-URL matches the basename against sha256sums.txt.
+- name: Download chrony_exporter release tarball.
+  ansible.builtin.get_url:
+    url: "https://github.com/SuperQ/chrony_exporter/releases/download/v{{ chrony_exporter_version }}/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
+    checksum: "sha256:https://github.com/SuperQ/chrony_exporter/releases/download/v{{ chrony_exporter_version }}/sha256sums.txt"
+    mode: "0644"
+
+- name: Unpack chrony_exporter tarball.
+  ansible.builtin.unarchive:
+    src: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64.tar.gz"
+    dest: /opt/chrony_exporter
+    remote_src: true
+    creates: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
+
+- name: Install chrony_exporter binary.
+  ansible.builtin.copy:
+    src: "/opt/chrony_exporter/chrony_exporter-{{ chrony_exporter_version }}.linux-amd64/chrony_exporter"
+    dest: /usr/local/bin/chrony_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart chrony exporter
+
+- name: Copy chrony_exporter systemd unit into place.
+  ansible.builtin.copy:
+    src: chrony_exporter.service
+    dest: /etc/systemd/system/chrony_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart chrony exporter
+
+- name: Ensure chrony_exporter is running.
+  ansible.builtin.service:
+    name: chrony_exporter
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"

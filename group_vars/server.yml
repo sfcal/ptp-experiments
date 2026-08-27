@@ -40,13 +40,6 @@ ptp_ocp_gnsspps_auto_reboot: false
 # asserts.
 timecard_kernel_pps: true
 
-# gpsd-exporter PPS histogram (gpsd_pps_histogram_bucket, used by the GPSD
-# dashboard's "Clock offset from PPS" panels). Bucket span = size * count,
-# centered on 0: 1000 ns x 40 = +/-20 us -- PPS asserts are timestamped by
-# the system clock at IRQ time, so interrupt latency dominates the spread.
-gpsd_exporter_pps_bucket_ns: 1000
-gpsd_exporter_pps_bucket_count: 40
-
 # Timecard SMA routing (ptp_ocp sysfs). Writes don't persist across reboot,
 # so a systemd oneshot (timecard-sma.service) reapplies them at boot.
 # Only keys listed under timecard_sma are written; see
@@ -164,22 +157,3 @@ ptp4l_conf_extra: |
 # ts2phc needs the igc-ppsfix driver loaded, an SMA cable from Timecard PPS
 # OUT to TimeNIC PPS IN, and timecard_sma routing "OUT: PHC" on the cabled
 # connector (bench-check: testptp shows extts events).
-
-# Monitoring stack (Prometheus + exporters) running in Docker. Grafana
-# lives on the homelab Grafana server, which points a datasource (uid
-# "prometheus") at this Prometheus; dashboards are imported by hand from
-# files/dashboards/.
-monitoring_deploy_path: /opt/monitoring
-monitoring_uid: "1000"
-monitoring_gid: "1000"
-
-# Where ptp-metrics.sh writes node_exporter textfile metrics.
-ptp_metrics_textfile_dir: "{{ monitoring_deploy_path }}/textfile"
-
-prometheus_image: "prom/prometheus:v3.13.1"
-prometheus_port: 9090
-prometheus_retention: 30d
-
-chrony_exporter_image: "quay.io/superq/chrony-exporter:v0.14.0"
-node_exporter_image: "prom/node-exporter:v1.12.1"
-gpsd_exporter_image: "ghcr.io/brendanbank/gpsd-prometheus-exporter:latest"

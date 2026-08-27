@@ -1,0 +1,12 @@
+---
+# chrony_exporter (:9123), gpsd exporter (:9015) and node_exporter (:9100)
+# as native systemd services; the homelab Prometheus scrapes them over the
+# LAN.
+- name: Install chrony exporter.
+  ansible.builtin.import_tasks: chrony_exporter.yml
+
+- name: Install gpsd exporter.
+  ansible.builtin.import_tasks: gpsd_exporter.yml
+
+- name: Install node exporter.
+  ansible.builtin.import_tasks: node_exporter.yml

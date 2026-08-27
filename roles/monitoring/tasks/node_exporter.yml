@@ -1,0 +1,13 @@
+---
+# node_exporter: host metrics on :9100. Ubuntu's package ships its own
+# unit and sane defaults, so this is just install + enable.
+- name: Install node exporter.
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+
+- name: Ensure node exporter is running.
+  ansible.builtin.service:
+    name: prometheus-node-exporter
+    state: started
+    enabled: true

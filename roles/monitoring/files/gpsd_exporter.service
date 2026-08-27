@@ -1,0 +1,21 @@
+# Managed by Ansible (roles/monitoring).
+[Unit]
+Description=Prometheus exporter for gpsd
+# After (not Requires) gpsd: the exporter reconnects on its own.
+After=network-online.target gpsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Unprivileged: reads the gpsd JSON stream on localhost:2947; metrics on
+# the default :9015.
+DynamicUser=yes
+# PPS histogram (gpsd_pps_histogram_bucket) span = size * count centered on
+# 0: 1000 ns x 40 = +/-20 us -- PPS asserts are timestamped by the system
+# clock at IRQ time, so interrupt latency dominates the spread.
+ExecStart=/usr/local/bin/gpsd_exporter.py --pps-histogram --pps-bucket-size 1000 --pps-bucket-count 40
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
