@@ -1,12 +1,14 @@
 # Managed by Ansible (roles/ticc). Started on demand by `ticc.sh start`;
 # no [Install] section on purpose -- captures never start at boot.
 [Unit]
-Description=TICC capture: %I
+Description=TICC capture: %i
 
 [Service]
 Type=exec
 User={{ ticc_user }}
-ExecStart=/usr/local/bin/ticc-capture.sh %I
+# %i, not %I: unescaping turns the dashes in names like TC-ART-foo into
+# slashes (systemd's - <-> / mapping), wrecking the log path.
+ExecStart=/usr/local/bin/ticc-capture.sh %i
 # A dead capture must be visible in `ticc.sh status`, never silently
 # restarted into a fragmented log.
 Restart=no

@@ -6,4 +6,4 @@ sync:
   ticc-logs:
     alpha: "sfcal@10.3.30.123:/var/log/ticc"
     beta: "./analysis/data/raw"
-    mode: "one-way-safe"
+    mode: "two-way-safe"
