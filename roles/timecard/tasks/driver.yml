@@ -40,13 +40,12 @@
   when: ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists
 
 # Rewrite the netboot-staged blacklist now that the working driver is on
-# disk: ptp_ocp comes off it, spi_nor stays on. Once ptp_ocp probes the card
-# it registers the FPGA's SPI flash device, udev autoloads spi_nor to bind
-# it, and the JEDEC-ID read hangs forever in the Xilinx SPI controller --
-# the TAP PTM image does not service it (D-state udev worker, hung-task
-# warnings, shutdown wedges). Costs firmware flashing from Linux, which we
-# do not do. Must precede the modprobe below so spi_nor is already
-# blacklisted when ptp_ocp registers the flash device.
+# disk: ptp_ocp comes off it, spi_nor goes on. spi_nor's probe of the
+# Timecard's flash hangs forever in the Xilinx SPI controller -- the TAP
+# PTM image does not service it -- leaving an unkillable D-state process
+# that wedges every later shutdown. Costs firmware flashing from Linux,
+# which we do not do. The initramfs rebuild below carries this into every
+# subsequent boot.
 - name: Keep spi_nor blacklisted while allowing ptp_ocp.
   ansible.builtin.copy:
     dest: /etc/modprobe.d/blacklist-timecard.conf
@@ -58,6 +57,30 @@
     group: root
     mode: "0644"
   register: installer_blacklist_updated
+
+# udev workers autoload modules in-process via libkmod, whose config was
+# read when udevd started -- writing the file above does not update the
+# running daemon until it reloads (verified 2026-08-27: post-reload
+# triggers do honor a new blacklist entry).
+- name: Reload udev so autoloads honor the rewritten blacklist.
+  ansible.builtin.command:
+    cmd: udevadm control --reload
+  when: installer_blacklist_updated.changed
+
+# The blacklist alone cannot protect the first boot: spi-intel exposes the
+# PCH BIOS flash as an spi device with the same "spi-nor" modalias, so the
+# installer's boot loads spi_nor (t+5s) before this role ever runs, and a
+# RESIDENT driver binds new devices synchronously at registration -- no
+# autoload, no blacklist consulted. That was the 2026-08-27 provisioning
+# wedge: ptp_ocp's flash registration was grabbed by the resident spi_nor
+# inside a udev worker (JEDEC read, D-state, systemd-shutdown waiting on
+# it forever). Evict it before ptp_ocp can offer it a device; the
+# BIOS-flash mtd is unused, so removal is free, and the rebuilt initramfs
+# keeps it out of later boots.
+- name: Unload spi_nor before ptp_ocp registers the Timecard flash.
+  community.general.modprobe:
+    name: spi_nor
+    state: absent
 
 # The autoinstall baked its blacklist into the initramfs, so rebuild after
 # changing the file. -k all: every installed kernel's initramfs carries it.

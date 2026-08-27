@@ -74,7 +74,7 @@
       (cd "$staging" && find kernel | cpio --quiet -H newc -o) > /boot/acpi-tgpio.cpio
     executable: /bin/bash
   when: tgpio_ssdt_compile.changed or not tgpio_cpio.stat.exists
-  notify: Update grub
+  register: tgpio_cpio_packed
 
 - name: Point GRUB at the ACPI archive.
   ansible.builtin.copy:
@@ -83,7 +83,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Update grub
+  register: tgpio_grub_cfg
 
 # Boot arming moved from udev-add to a post-sync oneshot: udev armed at
 # ~t+4 s, which always lost the race with chrony's +-37 s TAI/UTC startup
@@ -156,3 +156,8 @@
     enabled: true
     daemon_reload: true
     state: "{{ 'restarted' if (tgpio_watch_script.changed or tgpio_watch_unit.changed) else 'started' }}"
+
+- name: Regenerate grub.cfg with the early-initrd ACPI archive.
+  ansible.builtin.command:
+    cmd: update-grub
+  when: tgpio_cpio_packed.changed or tgpio_grub_cfg.changed
