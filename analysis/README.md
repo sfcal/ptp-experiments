@@ -6,18 +6,37 @@ plots, histograms, ADEV / OADEV / MDEV / HDEV, and TDEV (via
 
 ## Capturing data
 
-On the GM (`timeserver`, 10.3.30.123), log the TICC serial output with picocom
-into `/var/log/ticc/`:
+Captures on the GM (`timeserver`, 10.3.30.123) run under systemd and are
+driven remotely with the `ticc.sh` CLI (deployed by `roles/ticc`):
 
 ```bash
-picocom -b 115200 --logfile /var/log/ticc/<name>.log /dev/ticc
+ssh sfcal@10.3.30.123 sudo ticc.sh start <name>
 ```
+
+```bash
+ssh sfcal@10.3.30.123 sudo ticc.sh status
+```
+
+```bash
+ssh sfcal@10.3.30.123 sudo ticc.sh reset
+```
+
+```bash
+ssh sfcal@10.3.30.123 sudo ticc.sh stop
+```
+
+`start` logs to `/var/log/ticc/<name>_<YYYYmmdd-HHMMSS>.log` — a fresh
+timestamped file per run, append-only, so nothing is ever overwritten.
+`reset` reboots the TICC (rolling a new file if a capture is running);
+`ticc.sh ls` lists the capture dir. Every start/reset pulses DTR, which reboots
+the TICC, so each file begins with the TICC's `#` config banner (the parser
+skips it).
 
 `/dev/ticc` is a udev symlink to the TICC's serial port, pinned to the board's
 USB serial number (`roles/ticc`) — raw `ttyACMN` numbering follows enumeration
-order. The role also installs picocom, creates `/var/log/ticc/` (owned by the
-login user), and puts that user in `dialout`, so no `sudo` (after a fresh
-login).
+order. The capture user is in `dialout`, and picocom is still installed for
+interactive poking (`picocom -b 115200 /dev/ticc`, but stop any running
+capture first — two readers steal bytes from each other).
 
 Logs sync into `analysis/data/raw/` automatically via mutagen (session defined
 in `mutagen.yml` at the repo root):
@@ -29,7 +48,10 @@ mutagen project terminate  # stop
 ```
 
 The sync is one-way-safe (GM → local): local edits under `data/raw/` are never
-overwritten and show up as conflicts instead. Curated/trimmed segments are
+overwritten and show up as conflicts instead. Deleting *every* capture on the
+GM halts the session as a safety stop ("one-sided root emptying");
+`mutagen sync reset ticc-logs` accepts it, and files that exist only locally
+are never touched. Curated/trimmed segments are
 still promoted from `data/raw/` to `data/` by hand. The parser skips the `#`
 header lines and any partial/garbage lines, so raw picocom logs work as-is.
 

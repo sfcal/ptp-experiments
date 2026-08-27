@@ -1,9 +1,10 @@
 ---
 # TAPR TICC (time-interval counter) capture support. The TICC is an Arduino
 # Mega 2560 shield on USB serial; cdc_acm autoloads from the modalias, so
-# "install" is just the capture tool, a stable device name, and the log
-# directory. Captures stay manual on purpose (named picocom runs, see
-# analysis/README.md) -- no logging service.
+# "install" is just the capture tooling, a stable device name, and the log
+# directory. Captures run on demand via the `ticc.sh` CLI (start/stop/reset,
+# one timestamped file per run -- see analysis/README.md); nothing captures
+# at boot.
 
 - name: Install picocom for TICC serial capture.
   ansible.builtin.apt:
@@ -35,10 +36,43 @@
     groups: dialout
     append: true
 
+# Growing measurement logs belong under /var/log (FHS 5.10), alongside
+# chrony's own tracking/statistics logs.
 - name: Create the TICC capture directory (mutagen sync source).
   ansible.builtin.file:
-    path: "{{ ticc_capture_dir }}"
+    path: /var/log/ticc
     state: directory
     owner: "{{ ticc_user }}"
     group: "{{ ticc_user }}"
     mode: "0755"
+
+- name: Deploy the capture worker script.
+  ansible.builtin.copy:
+    src: ticc-capture.sh
+    dest: /usr/local/bin/ticc-capture.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the ticc control CLI.
+  ansible.builtin.copy:
+    src: ticc.sh
+    dest: /usr/local/bin/ticc.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+# Daemon-reload only: a deploy must never restart a running capture.
+- name: Install the ticc-capture@ template unit.
+  ansible.builtin.template:
+    src: ticc-capture@.service.j2
+    dest: /etc/systemd/system/ticc-capture@.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: ticc_capture_unit
+
+- name: Reload systemd for the unit change.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: ticc_capture_unit.changed

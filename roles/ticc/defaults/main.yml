@@ -14,11 +14,6 @@ ticc_usb_product: "0042"
 # Arduinos can't move it; "" matches any Mega 2560.
 ticc_usb_serial: "14532303232351F01151"
 
-# Capture user; owns the log directory so sudo-less picocom can write it
+# Capture user; owns the log directory so sudo-less captures can write it
 # and mutagen (syncing as the same user) can read it.
 ticc_user: "{{ ansible_user }}"
-
-# Capture log directory (the mutagen sync source). Growing measurement
-# logs belong under /var/log (FHS 5.10), alongside chrony's own
-# tracking/statistics logs -- not in a login user's home.
-ticc_capture_dir: /var/log/ticc
