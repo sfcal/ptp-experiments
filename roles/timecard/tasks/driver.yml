@@ -66,6 +66,12 @@
     cmd: update-initramfs -u -k all
   when: installer_blacklist_updated.changed
 
+# Set for Deploy to reboot before continuing
+- name: Flag a reboot when the initramfs blacklist changed.
+  ansible.builtin.set_fact:
+    timecard_reboot_required: true
+  when: installer_blacklist_updated.changed
+
 - name: Load the ptp_ocp driver.
   community.general.modprobe:
     name: ptp_ocp
