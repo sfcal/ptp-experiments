@@ -63,6 +63,12 @@
         name: monitoring
       tags: [monitoring]
 
+    - name: Install TAPR TICC capture support (picocom, /dev/ticc symlink).
+      ansible.builtin.import_role:
+        name: ticc
+      when: ticc_enabled | default(false)
+      tags: [ticc]
+
 
 - name: Deploy PTP clients
   hosts: clients

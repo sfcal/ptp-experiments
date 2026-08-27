@@ -7,11 +7,17 @@ plots, histograms, ADEV / OADEV / MDEV / HDEV, and TDEV (via
 ## Capturing data
 
 On the GM (`timeserver`, 10.3.30.123), log the TICC serial output with picocom
-into `~/TICC/`:
+into `/var/log/ticc/`:
 
 ```bash
-sudo picocom -b 115200 --logfile ~/TICC/<name>.log /dev/ttyACM0
+picocom -b 115200 --logfile /var/log/ticc/<name>.log /dev/ticc
 ```
+
+`/dev/ticc` is a udev symlink to the TICC's serial port, pinned to the board's
+USB serial number (`roles/ticc`) — raw `ttyACMN` numbering follows enumeration
+order. The role also installs picocom, creates `/var/log/ticc/` (owned by the
+login user), and puts that user in `dialout`, so no `sudo` (after a fresh
+login).
 
 Logs sync into `analysis/data/raw/` automatically via mutagen (session defined
 in `mutagen.yml` at the repo root):

@@ -1,0 +1,44 @@
+---
+# TAPR TICC (time-interval counter) capture support. The TICC is an Arduino
+# Mega 2560 shield on USB serial; cdc_acm autoloads from the modalias, so
+# "install" is just the capture tool, a stable device name, and the log
+# directory. Captures stay manual on purpose (named picocom runs, see
+# analysis/README.md) -- no logging service.
+
+- name: Install picocom for TICC serial capture.
+  ansible.builtin.apt:
+    name: picocom
+    state: present
+
+- name: Install the TICC serial symlink udev rule.
+  ansible.builtin.template:
+    src: 99-ticc.rules.j2
+    dest: /etc/udev/rules.d/99-ticc.rules
+    owner: root
+    group: root
+    mode: "0644"
+  register: ticc_udev_rule
+
+- name: Reload udev after the rule change.
+  ansible.builtin.command:
+    cmd: udevadm control --reload
+  when: ticc_udev_rule.changed
+
+- name: Re-evaluate tty devices so the symlink appears now.
+  ansible.builtin.command:
+    cmd: udevadm trigger --settle --subsystem-match=tty
+  when: ticc_udev_rule.changed
+
+- name: Add the capture user to dialout for sudo-less serial access.
+  ansible.builtin.user:
+    name: "{{ ticc_user }}"
+    groups: dialout
+    append: true
+
+- name: Create the TICC capture directory (mutagen sync source).
+  ansible.builtin.file:
+    path: "{{ ticc_capture_dir }}"
+    state: directory
+    owner: "{{ ticc_user }}"
+    group: "{{ ticc_user }}"
+    mode: "0755"

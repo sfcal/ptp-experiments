@@ -1,0 +1,10 @@
+# Managed by Ansible (roles/ticc).
+# Stable name for the TAPR TICC's serial port. ttyACMN numbering follows
+# enumeration order, so match the Mega 2560 base board's USB identity (all
+# three ATTRS live on the same USB-device parent, as one rule requires).
+# No ACTION filter on purpose: udev recomputes symlinks on every uevent,
+# and gating on "add" would drop the link on a later change event (e.g. a
+# plain udevadm trigger). ID_MM_DEVICE_IGNORE keeps ModemManager (if ever
+# installed) from probing the port with AT commands, which auto-resets the
+# Arduino and garbles a running capture.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="{{ ticc_usb_vendor }}", ATTRS{idProduct}=="{{ ticc_usb_product }}"{% if ticc_usb_serial %}, ATTRS{serial}=="{{ ticc_usb_serial }}"{% endif %}, SYMLINK+="ticc", ENV{ID_MM_DEVICE_IGNORE}="1"
