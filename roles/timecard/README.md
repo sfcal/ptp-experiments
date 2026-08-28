@@ -8,7 +8,7 @@ Kernel 5.12 or newer is recommended.
 Make sure VT-d is enabled in the BIOS. Build the module for the running kernel:
 
 ```sh
-cd DRV/Linux
+cd roles/timecard/files/src
 ./remake
 ```
 

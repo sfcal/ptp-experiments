@@ -47,21 +47,21 @@ profile reused the name.
 ## Layout
 
 - `deploy.yml` — the main playbook; a grandmaster play and a clients play.
-  Tags: `gpsd`, `timecard`, `chrony`, `dkms`, `ptp`, `pipeline`,
-  `monitoring`. (Node IPs are provisioned by netboot; nothing here manages
-  addressing.)
+  Tags: `timecard`, `tgpio`, `igc`, `reboot`, `ptp`, `chrony`,
+  `monitoring`, `ticc`. (Node IPs are provisioned by netboot; nothing here
+  manages addressing.)
 - `reset.yml` — hard-reset CM5 nodes (VC reboot flags + reboot); requires
   `-e reset_hosts=...`.
 - `tasks/`, `handlers/` — flattened single-play pieces too small for a role
   (currently gpsd, grandmaster only).
 - `roles/` — `timecard` (udev rules + SMA routing),
-  `chrony` (GM and clients, fragments converge on their vars), `dkms_module`
-  (parameterized, used for both patched drivers), `linuxptp` (source build,
+  `chrony` (GM and clients, fragments converge on their vars),
+  `igc_ppsfix` (host source build of the PPS-fixed igc, like `timecard`'s
+  ptp_ocp build), `linuxptp` (source build,
   pinned commit in `group_vars/all.yml`), `ptp4l`, `gm_pipeline`,
   `ptp_metrics` (textfile collector), `monitoring_server` (GM), and
   `monitoring_agent` (clients).
 - `vars/gm_pipelines/` — one file per GM pipeline profile.
-- `igc-ppsfix/`, `ptp-ocp-gnsspps/` — patched-driver DKMS sources and docs.
 - `files/dashboards/` — Grafana dashboard JSON, source of record.
 - `analysis/` — marimo notebook for TICC ADEV analysis (not deployed).
 
@@ -74,13 +74,13 @@ class (FHS 3.0):
   install`, default prefix), `testptp`, the exporters, and the local
   systemd-invoked scripts. All root-only, hence `sbin` not `bin` (3.16.1).
 - `/usr/local/src/<name>/` — local source and build trees: `linuxptp`,
-  `testptp`, `ptp_ocp` (DRV), `gpsd-prometheus-exporter`, `tgpio` (the
-  SSDT `.asl`/`.aml`). Built in place; only the artifact is installed.
+  `testptp`, `ptp_ocp`, `igc-ppsfix`, `gpsd-prometheus-exporter`,
+  `tgpio` (the SSDT `.asl`/`.aml`). Built in place; only the artifact is
+  installed.
 - `/var/cache/chrony_exporter/` — the downloaded release tarball; a
   regenerable cache, safe to delete.
 - `/etc/` — all config (`linuxptp/`, `chrony/conf.d/`, `modprobe.d/`,
   `udev/rules.d/`, `systemd/system/`, `default/grub.d/`).
-- `/opt/` — DKMS source trees only (`igc-ppsfix`, `ptp-ocp-gnsspps`).
 - Kernel modules go where the kernel expects them:
   `/lib/modules/<kver>/updates/`.
 
@@ -88,31 +88,29 @@ class (FHS 3.0):
 
 `/dev/ptpN` numbering depends on probe order, so nothing references it:
 
-- `/dev/ptp-timecard`, `/dev/pps-timecard` — Timecard PHC and kernel PPS
-  (`roles/timecard/files/timecard-ptp.rules`).
+- `/dev/ptp-timecard` — Timecard PHC
+  (`roles/timecard/files/99-ptp-timecard.rules`).
 - `/dev/ptp-nic` — the PHC `ptp4l` uses, matched by parent driver
   (`nic_phc_driver`: `igc` on i226 hosts, the Broadcom PHY driver on Pi 5
   onboard — the Pi exposes a second, wrong PHC on the MAC).
 
-## Patched drivers (DKMS)
+## Patched drivers
 
-Both install **to disk only** and load at the next reboot; Ansible flags
-`/run/reboot-required` and never reloads live (the igc NIC carries the SSH
-session; chrony/ts2phc/gpsd hold the Time Card open). Opt in to automatic
-reboots per host with `igc_ppsfix_auto_reboot` / `ptp_ocp_gnsspps_auto_reboot`.
+Both are built on the host from vendored source and installed to
+`/lib/modules/<kver>/updates/` (no DKMS: after a kernel upgrade the stock
+drivers run until the next deploy run rebuilds for the new kernel):
 
-- **igc-ppsfix** — i226 EXTTS/PEROUT fixes; required for ts2phc on the
-  TimeNIC. GM + client .12.
-- **ptp-ocp-gnsspps** — the TAP PTM-capable `ptp_ocp` plus the raw-GNSS-PPS
-  patch. **Required**: the Time Card runs a PTM FPGA image the stock in-tree
-  driver cannot drive (all-ones registers, wedged udev — looks exactly like
-  dead hardware). Stock `ptp_ocp` is blacklisted; `ptp_ocp-load.service`
-  loads the DKMS build at boot and refuses to load a stock module. GM only.
-  See `ptp-ocp-gnsspps/README.md`, including the devlink-flash/SPI caveat.
+- **igc-ppsfix** (`roles/igc_ppsfix`, source in its `files/src/`) — i226
+  EXTTS/PEROUT fixes; required for ts2phc on the TimeNIC. Installs **to
+  disk only** and loads at the next reboot via deploy.yml's shared reboot
+  task — never reloaded live: the igc NIC carries the SSH session.
+- **ptp_ocp** (`roles/timecard`, source in its `files/src/`) — out-of-tree
+  PTM-capable build. **Required**: the Time Card runs a PTM FPGA image the
+  stock in-tree driver cannot drive (all-ones registers, wedged udev —
+  looks exactly like dead hardware). Loaded live by the role.
 
-After a kernel upgrade, check that the *running* modules match the on-disk
-DKMS builds (the deploy warns when they don't): a reboot that regenerates
-initramfs ordering wrong can silently boot the stock drivers.
+After a kernel upgrade, re-run the deploy: the igc role keeps flagging the
+reboot on every run until the *running* module matches the on-disk build.
 
 ## Monitoring
 

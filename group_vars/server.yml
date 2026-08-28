@@ -1,103 +1,43 @@
 ---
-# Grandmaster: GNSS Timecard -> ts2phc -> ptp4l (masterOnly).
-ptp_role: grandmaster
-
-network_interface: "enp1s0"
-
-# The GM has TWO igc NICs (TimeNIC enp1s0 + enp3s0). ts2phc/phc2sys target
-# the TimeNIC by interface name (ethtool resolves its PHC), so no udev
-# symlink or PCI matcher is needed; only chrony's NIC refclock still names
-# a raw /dev/ptpN (see chrony_refclock below).
-
-# GPSd configuration. /dev/pps2 is the Timecard PHC's kernel PPS device
-# (enabled by timecard-sma.sh), which gpsd pairs with the NMEA time from
-# ttyS7 and reports as class PPS (-> gpsd-exporter -> Grafana "Clock offset
-# from PPS" panels). Device numbering follows driver probe order -- update
-# by hand if a NIC change renumbers /dev/ptpN//dev/ppsN (the Timecard's is
-# the ppsN whose /sys/class/pps/ppsN/name matches its /dev/ptpN).
+# ===[ GPSd ]==============================================================
 gpsd_state: started
 gpsd_enabled: true
 gpsd_devices: "/dev/ttyS7"
 gpsd_baud: "115200"
 gpsd_options: "-s {{ gpsd_baud }} -n"
 
-# igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/README.md).
-# Installed on disk only -- loads at the next reboot. Ansible flags
-# /run/reboot-required and never reloads igc live (enp1s0 is the igc NIC).
-igc_ppsfix_enabled: true
-igc_ppsfix_auto_reboot: false  # opt-in: let Ansible reboot when a new build is staged
+# ===[ Timecard/System ]====================================================
 
-# ptp-ocp-gnsspps DKMS driver: the TAP PTM-capable ptp_ocp + raw GNSS PPS
-# patch (see ptp-ocp-gnsspps/README.md). REQUIRED on this card -- its FPGA
-# runs a PTM image the stock in-tree driver cannot drive (all-ones
-# registers, wedged udev). Stock ptp_ocp is blacklisted; ptp_ocp-load.service
-# loads the DKMS build at boot. Same reboot conventions as igc-ppsfix.
-ptp_ocp_gnsspps_enabled: true
-ptp_ocp_gnsspps_auto_reboot: false
-
-# Enable kernel PPS events on the Timecard PHC at boot (PTP_ENABLE_PPS ioctl
-# in timecard-sma.sh). Without this, the PHC's ppsN device exists but never
-# asserts.
-timecard_kernel_pps: true
-
-# Timecard SMA routing (ptp_ocp sysfs). Writes don't persist across reboot,
-# so a systemd oneshot (timecard-sma.service) reapplies them at boot.
-# Only keys listed under timecard_sma are written; see
-# /sys/class/timecard/<dev>/available_sma_inputs and available_sma_outputs
-# on the host for the accepted values.
-timecard_device: ocp0
-timecard_sma_wait_timeout: 30  # seconds to wait for the sysfs node at boot
-
-# UTC-TAI handling: none needed -- the FPGA TOD engine applies the leap
-# offset itself from the GNSS receiver's UBX leap-second field, so the
-# PHC lands in TAI on its own (verified 2026-08-25; on a COLD GNSS start
-# the leap data can take ~12.5 min to arrive, during which the tai
-# refclocks falsetick and then self-heal). timecard_utc_tai_offset is
-# retired ('utc_tai_offset' never affected the PHC -- IRIG/DCF outputs
-# only), which leaves timecard-sma.sh's guarded offset block inert.
-# Known hazard, handled by hand if it recurs: 'tod_correction' is an
-# extra live TOD adjustment whose value SURVIVES WARM REBOOTS -- a stray
-# 37 written there on the bench put the PHC at UTC+74. If the tai
-# refclocks ever read a multiple of ~37 s off, check it and zero it.
 timecard_sma:
   sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
-  sma2: "OUT: 10Mhz"
-  sma3: "OUT: PHC"     
+  sma2: "OUT: 10Mhz"  # TICC 10Mhz reference
+  sma3: "OUT: PHC"
 
-# Arm the Mu's TGPIO 1PPS output on edge-connector pin 123 (GPP_B14 =
-# TIME_SYNC1 = ACPI INTC1024) at boot, via a udev rule. The rule arms every
-# pps-gen device on purpose -- the index is not stable and there is no other
-# attribute to match on. Output is a 1 Hz 50%-duty square wave, not a narrow
-# pulse, with edges on the second boundary. See the "TGPIO 1PPS on
-# LattePanda Mu pin 123" note.
+# Build the PPS-fixed igc driver (roles/igc_ppsfix); required for ts2phc
+# EXTTS on the TimeNIC.
+igc_ppsfix_enabled: true
+
+# Arm the Mu's TGPIO 1PPS output on edge-connector pin 123
 tgpio_pps_enabled: true
 
-# Enable NIC hardware timestamping for NTP clients (hwtimestamp * in
-# refclock.conf).
+# ===[ Chrony ]===========================================================
+
 chrony_hwtimestamp: true
 
 # Refclock to be used as a time source.
-# See: https://chrony-project.org/doc/3.4/chrony.conf.html#refclock
 chrony_refclock: |
-  # /dev/ptp-timecard is the udev symlink to the Timecard PHC
-  # (roles/timecard files/99-ptp-timecard.rules) -- raw /dev/ptpN numbers
-  # follow probe order and moved under us on the 2026-08-25 reboot,
-  # leaving chrony disciplining a free-running NIC PHC at +37 s.
+ 
+  # refids are NTP reference IDs: 4 ASCII chars max (chronyd rejects longer).
+  refclock PHC /dev/ptp-timecard poll 0 dpoll -5 refid TCPM tai prefer
+
+  # Monitor (but never select)
   # :nocrossts removes PTM
-  refclock PHC /dev/ptp-timecard:nocrossts poll 0 dpoll -5 refid AC tai noselect
-  refclock PHC /dev/ptp-timecard poll 0 dpoll -5 refid PTM tai prefer
+  refclock PHC /dev/ptp-timecard:nocrossts poll 0 dpoll -5 refid TC tai noselect
+  refclock PHC /dev/ptp0 poll 0 dpoll -5 refid NIC tai noselect
 
-  # Monitor (but never select) the NIC PHC that ptp4l serves to clients.
-  # Still a raw /dev/ptpN (correct-by-luck after the 2026-08-25
-  # renumbering); update by hand if probe order changes again.
-  #refclock PHC /dev/ptp0 poll 0 dpoll -5 tai noselect refid NIC
 
-  # Uncomment to log timing statistics.
+  # log timing statistics.
   log tracking measurements statistics
-
-# Hosts allowed to query chrony for NTP time.
-# See: https://chrony-project.org/doc/3.4/chrony.conf.html#allow
-chrony_allow: "10.3.0.0/16"
 
 # NTP upstream servers
 chrony_servers:
@@ -106,10 +46,29 @@ chrony_servers:
   - ntp3.npl.co.uk
   - ntp4.npl.co.uk
   - ntp5.npl.co.uk
-  - time.cloudflare.com
-  - time.conorrobinson.ie
-
+  #- time.cloudflare.com
+  #- time.conorrobinson.ie
 chrony_server_options: iburst xleave
+
+# Hosts allowed to query chrony for NTP time.
+chrony_allow: "10.3.0.0/16"
+
+
+# ===[ Linuxptp ]==========================================================
+network_interface: "enp1s0"
+
+# PTP runs on the primary NIC; override per host if needed.
+ptp4l_ptp_iface: "{{ network_interface }}"
+
+# linuxptp is built from source on each host for the latest features.
+# Install paths are hardcoded in the roles, deliberately not variables:
+# source builds live in /usr/local/src/<name> and install to
+# /usr/local/sbin (FHS 3.0 4.9.1/4.9.2 and 3.16.1). Only the version pins
+# below are tunable.
+linuxptp_repo: git://git.code.sf.net/p/linuxptp/code
+linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
+
+# ── ts2phc ───────────────────────────────────────────────────────────────
 
 # NIC-PHC discipline. The Timecard's SMA PPS output is cabled to the
 # TimeNIC's SDP1; ts2phc hardware-timestamps the edges and disciplines the
@@ -130,6 +89,8 @@ ts2phc_enabled: true
 linuxptp_managed_services:
   - ptp4l
   - ts2phc
+
+# ── ptp4l ───────────────────────────────────────────────────────────────
 
 # Grandmaster-specific ptp4l.conf directives (appended to the shared header
 # in roles/ptp4l/templates/ptp4l.conf.j2).
@@ -154,6 +115,9 @@ ptp4l_conf_extra: |
   # Announce message rate: 2^0 = 1 msg/sec
   logAnnounceInterval 0
 
-# ts2phc needs the igc-ppsfix driver loaded, an SMA cable from Timecard PPS
-# OUT to TimeNIC PPS IN, and timecard_sma routing "OUT: PHC" on the cabled
-# connector (bench-check: testptp shows extts events).
+# ts2phc needs the igc-ppsfix driver loaded (built by roles/igc_ppsfix),
+# an SMA cable from Timecard PPS OUT to TimeNIC PPS IN, and timecard_sma
+# routing "OUT: PHC" on the cabled connector (bench-check: testptp shows
+# extts events).
+
+# ── phc2sys ───────────────────────────────────────────────────────────────

@@ -3,7 +3,20 @@
 # grandmaster, chrony steers the system clock from the PHC refclock.
 ptp_role: slave
 
+system_timezone: Europe/London
+
 network_interface: "eth0"
+
+# PTP runs on the primary NIC; override per host if needed.
+ptp4l_ptp_iface: "{{ network_interface }}"
+
+# linuxptp is built from source on each host for the latest features.
+# Install paths are hardcoded in the roles, deliberately not variables:
+# source builds live in /usr/local/src/<name> and install to
+# /usr/local/sbin (FHS 3.0 4.9.1/4.9.2 and 3.16.1). Only the version pins
+# below are tunable.
+linuxptp_repo: git://git.code.sf.net/p/linuxptp/code
+linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
 
 # Driver owning the PHC that ptp4l uses on this NIC (udev DRIVERS match for
 # the /dev/ptp-nic symlink). Pi 5 onboard = the Broadcom PHY; hosts with an

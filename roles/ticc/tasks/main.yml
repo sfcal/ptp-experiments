@@ -6,11 +6,6 @@
 # one timestamped file per run -- see analysis/README.md); nothing captures
 # at boot.
 
-- name: Install picocom for TICC serial capture.
-  ansible.builtin.apt:
-    name: picocom
-    state: present
-
 - name: Install the TICC serial symlink udev rule.
   ansible.builtin.template:
     src: 99-ticc.rules.j2
@@ -36,8 +31,6 @@
     groups: dialout
     append: true
 
-# Growing measurement logs belong under /var/log (FHS 5.10), alongside
-# chrony's own tracking/statistics logs.
 - name: Create the TICC capture directory (mutagen sync source).
   ansible.builtin.file:
     path: /var/log/ticc

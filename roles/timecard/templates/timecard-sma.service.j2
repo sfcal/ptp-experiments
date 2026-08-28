@@ -1,9 +1,9 @@
 # {{ ansible_managed }}
 [Unit]
 Description=Configure Timecard SMA input/output routing
-# Route signals (and enable kernel PPS events) before the daemons that
-# consume them start.
-Before=ts2phc.service ptp4l.service gpsd.service
+# Route the SMA PPS before ts2phc (which disciplines the NIC PHC from it)
+# starts.
+Before=ts2phc.service ptp4l.service
 
 [Service]
 Type=oneshot

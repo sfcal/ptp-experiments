@@ -4,46 +4,18 @@
 # Available values: cat $SYSFS/available_sma_inputs / available_sma_outputs
 set -euo pipefail
 
-SYSFS="/sys/class/timecard/{{ timecard_device }}"
+SYSFS="/sys/class/timecard/ocp0"
 
-for _ in $(seq {{ timecard_sma_wait_timeout }}); do
+# Wait for the driver to probe at boot.
+for _ in $(seq 30); do
   [ -d "$SYSFS" ] && break
   sleep 1
 done
-[ -d "$SYSFS" ] || { echo "timecard {{ timecard_device }} not present after {{ timecard_sma_wait_timeout }}s" >&2; exit 1; }
-
-{% if timecard_utc_tai_offset is defined %}
-# The FPGA's TOD engine applies this when setting the PHC from GNSS time.
-# Without it (the TAP PTM image defaults to 0) the PHC runs in UTC: chrony's
-# 'tai' refclock option mis-corrects by +37 s and ptp4l serves a UTC
-# timescale as TAI. Bump when the IERS announce a leap second.
-if [ "$(cat "$SYSFS/utc_tai_offset")" != "{{ timecard_utc_tai_offset }}" ]; then
-  echo "{{ timecard_utc_tai_offset }}" > "$SYSFS/utc_tai_offset"
-  echo "utc_tai_offset <- {{ timecard_utc_tai_offset }}"
-fi
-{% endif %}
+[ -d "$SYSFS" ] || { echo "timecard ocp0 not present after 30s" >&2; exit 1; }
 
 {% for sma, mode in timecard_sma | dictsort %}
 if [ "$(cat "$SYSFS/{{ sma }}")" != "{{ mode }}" ]; then
   echo "{{ mode }}" > "$SYSFS/{{ sma }}"
   echo "{{ sma }} <- {{ mode }}"
 fi
-{% else %}
-echo "no SMA mappings configured (timecard_sma is empty); nothing to do"
 {% endfor %}
-{% if timecard_kernel_pps | default(false) %}
-
-# Enable kernel PPS events on the Timecard PHC (PTP_ENABLE_PPS = _IOW('=',4,int)).
-# The PHC's /dev/ptpN is resolved through the sysfs link (numbering depends
-# on driver probe order). The request persists in the driver after the fd
-# closes; the PHC's ppsN device then asserts once per second for gpsd.
-PHC_DEV="/dev/$(basename "$(readlink "$SYSFS/ptp")")"
-PHC_DEV="$PHC_DEV" python3 - <<'PYEOF'
-import fcntl, os, struct
-dev = os.environ["PHC_DEV"]
-fd = os.open(dev, os.O_RDWR)
-fcntl.ioctl(fd, 0x40043D04, struct.pack("i", 1))
-os.close(fd)
-print(f"kernel PPS events enabled on {dev}")
-PYEOF
-{% endif %}

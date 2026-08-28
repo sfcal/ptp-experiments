@@ -4,14 +4,17 @@ Driver fix for the grandmaster, so ts2phc can discipline the NIC PHC from
 the Timecard's 1PPS with hardware edge timestamping instead of a software
 PHC-to-PHC copy through the system clock's oscillator.
 
-**Route A is automated** by `tasks/igc-ppsfix.yml` in the main deployment
-(gated by `igc_ppsfix_enabled` in `group_vars/ptp_server.yml` / `host_vars`): Ansible copies
-`dkms/` to `/opt/igc-ppsfix`, runs `dkms add`/`dkms install` for the running
-kernel, rebuilds the initramfs, and flags `/run/reboot-required` when the
-running module differs from the installed one. It never reloads the module
-live (enp1s0 is the igc NIC carrying the SSH session); set
-`igc_ppsfix_auto_reboot: true` to let Ansible reboot instead. This folder
-remains fully standalone — the manual steps below still work as-is.
+**The install is automated** by this role in the main deployment
+(gated by `igc_ppsfix_enabled` in `group_vars/server.yml`): Ansible copies
+`files/src/` to `/usr/local/src/igc-ppsfix`, runs `./remake install`
+(build + install to `/lib/modules/<kver>/updates/igc.ko` + depmod — same
+pattern as `roles/timecard` for ptp_ocp), rebuilds the initramfs, and flags
+deploy.yml's shared reboot task when the running module differs from the
+on-disk one. A leftover DKMS igc install would shadow the module (depmod
+searches `updates/dkms` before `updates`), so the role asserts none is
+present rather than cleaning one up. It never reloads the module live
+(enp1s0 is the igc NIC carrying the SSH session). The build tree is fully
+standalone — the manual steps below still work as-is.
 
 The stock igc driver — verified unchanged through mainline v7.0/v7.1 —
 cannot do PPS properly on the I225/I226:
@@ -47,61 +50,52 @@ clean upstream source):
 ## Layout
 
 ```
-dkms/                        DKMS package: mainline v7.0 igc + fix applied
-patches/igc-ppsfix-7.0.patch same fix as a patch against kernel 7.0 source
-patches/igc-ppsfix-6.12.patch  variant for 6.12.x (applies cleanly to 6.12.47)
+files/src/                   mainline v7.0 igc + fix applied, self-contained
+                             out-of-tree build (Makefile + remake script)
+files/patches/igc-ppsfix-7.0.patch
+                             same fix as a patch against kernel 7.0 source
+                             (provenance; `patch -p1` it into a kernel tree
+                             if you ever build the fix in-tree instead)
 ```
 
-Two patch variants exist because 6.12 still carries an extra EXTTS flag
-check in the driver that 7.0 moved into the PTP core.
-
-## Route A — DKMS module (Ubuntu 7.0.0-x-generic, e.g. the grandmaster)
+## Manual build (Ubuntu 7.0.0-x-generic, e.g. the grandmaster)
 
 ```bash
-sudo apt install -y dkms linux-headers-$(uname -r)
-scp -r igc-ppsfix time:~/   # or however you copy it over
+sudo apt install -y build-essential linux-headers-$(uname -r)
+scp -r roles/igc_ppsfix/files/src time:~/igc-src   # or however you copy it
 ssh time
-cd ~/igc-ppsfix
-sudo dkms remove igc -v 7.0.0-ppsfix.1 2>/dev/null || true
-sudo dkms add ./dkms        # path to the folder containing dkms.conf
-sudo dkms build igc -v 7.0.0-ppsfix.1
-sudo dkms install --force igc -v 7.0.0-ppsfix.1
-sudo depmod -a
+cd ~/igc-src
+sudo ./remake install
 sudo update-initramfs -u -k $(uname -r)
 sudo reboot
 ```
 
-DKMS puts the module in `/lib/modules/<ver>/updates/dkms/`, which depmod
-prefers over the in-tree driver, and rebuilds it automatically on kernel
-package updates. Verify which module is live:
+`remake install` puts the module at `/lib/modules/<ver>/updates/igc.ko`,
+which depmod prefers over the in-tree driver, and runs depmod. The
+initramfs rebuild matters: igc is the boot NIC's driver and loads from the
+initramfs, so without it the stock module stays live even after a reboot.
+Unlike DKMS there is no automatic rebuild on kernel package updates — a
+new kernel runs the stock driver (NIC fine, PPS fix absent) until the next
+deploy run rebuilds for it. Verify which module is live:
 
 ```bash
 modinfo igc | grep -E 'filename|edge_check'
 ```
 
-`filename` must point at `updates/dkms/igc.ko*` and the two `edge_check`
-params must be listed.
+`filename` must point at `updates/igc.ko` (not `updates/dkms/` — that
+would be a leftover DKMS install shadowing this one) and the two
+`edge_check` params must be listed.
 
-**Rollback:** `sudo dkms remove igc -v 7.0.0-ppsfix.1 && sudo depmod -a &&
-sudo update-initramfs -u -k $(uname -r) && sudo reboot` — the untouched
-in-tree module takes over again.
+**Rollback:** `sudo rm /lib/modules/$(uname -r)/updates/igc.ko &&
+sudo depmod -a && sudo update-initramfs -u -k $(uname -r) && sudo reboot`
+— the untouched in-tree module takes over again.
 
-Note: the DKMS source is mainline v7.0; it has not been compile-tested
-against Ubuntu's 7.0 headers yet, so watch the `dkms build` step the first
-time. If Ubuntu's igc ever diverges enough to matter, fall back to Route B
-against the exact source of the running kernel.
-
-## Route B — kernel source patch (custom kernel build, e.g. 6.12.47)
-
-For the kernel built by `kernel.yml`, apply from the kernel source root:
-
-```bash
-patch -p1 < igc-ppsfix/patches/igc-ppsfix-6.12.patch
-```
-
-(If you ever wanted it in the automated build, `kernel.yml`'s
-`kernel_patches` mechanism can carry it — intentionally not enabled.)
-Use `igc-ppsfix-7.0.patch` for 7.x kernel trees.
+Notes: the source is mainline v7.0; it has not been compile-tested against
+Ubuntu's 7.0 headers yet, so watch the first `remake install`. The module
+is unsigned — do not port this pattern to a Secure Boot host (MOK signing
+was the one thing the old DKMS route did that remake does not); at boot a
+preferred-but-rejected unsigned igc would leave the machine without its
+NIC.
 
 ## Testing on the TimeNIC
 

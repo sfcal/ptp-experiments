@@ -1,7 +1,8 @@
 ---
-# Build and install the ptp_ocp driver from DRV/ (out-of-tree, PTM-capable;
-# see DRV/README.md). remake compiles against the running kernel's headers,
-# installs ptp_ocp.ko under /lib/modules/<kver>/updates/, and runs depmod.
+# Build and install the ptp_ocp driver from this role's files/src/
+# (out-of-tree, PTM-capable; see README.md alongside). remake compiles
+# against the running kernel's headers, installs ptp_ocp.ko under
+# /lib/modules/<kver>/updates/, and runs depmod.
 
 - name: Install kernel build prerequisites.
   ansible.builtin.apt:
@@ -18,7 +19,7 @@
 
 - name: Copy the driver sources.
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/DRV/{{ item }}"
+    src: "src/{{ item }}"
     dest: "/usr/local/src/ptp_ocp/{{ item }}"
     mode: preserve
   loop:
@@ -33,11 +34,15 @@
     path: /lib/modules/{{ ansible_kernel }}/updates/ptp_ocp.ko
   register: ptp_ocp_installed
 
+# Skipped in check mode: the command module validates chdir even then,
+# and a fresh host has no build directory yet.
 - name: Build and install ptp_ocp.ko for the running kernel.
   ansible.builtin.command:
     cmd: ./remake install
     chdir: "/usr/local/src/ptp_ocp"
-  when: ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists
+  when: >-
+    not ansible_check_mode
+    and (ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists)
 
 # Rewrite the netboot-staged blacklist now that the working driver is on
 # disk: ptp_ocp comes off it, spi_nor goes on. spi_nor's probe of the
@@ -89,10 +94,10 @@
     cmd: update-initramfs -u -k all
   when: installer_blacklist_updated.changed
 
-# Set for Deploy to reboot before continuing
+# Set for deploy.yml's shared reboot task (also fed by roles/igc_ppsfix).
 - name: Flag a reboot when the initramfs blacklist changed.
   ansible.builtin.set_fact:
-    timecard_reboot_required: true
+    reboot_required: true
   when: installer_blacklist_updated.changed
 
 - name: Load the ptp_ocp driver.

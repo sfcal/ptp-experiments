@@ -1,0 +1,154 @@
+---
+# Build and install the PPS-fixed igc driver from this role's files/src/
+# (see README.md alongside). remake compiles against the running kernel's
+# headers, installs igc.ko under /lib/modules/<kver>/updates/, and runs
+# depmod -- same pattern as roles/timecard/tasks/driver.yml.
+#
+# The install is TO DISK ONLY; the module loads at the next reboot. NEVER
+# rmmod/modprobe igc live: this NIC carries the SSH session, and
+# chrony/ts2phc hold the clocks open. Unlike ptp_ocp, igc is the boot
+# NIC's driver and is loaded FROM THE INITRAMFS, so every install must
+# also rebuild the initramfs -- the rootfs copy alone never runs.
+
+- name: Install kernel build prerequisites.
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - "linux-headers-{{ ansible_kernel }}"
+    state: present
+
+# ---- Build and install ---------------------------------------------------
+
+- name: Create the driver build directory.
+  ansible.builtin.file:
+    path: /usr/local/src/igc-ppsfix
+    state: directory
+    mode: "0755"
+
+# Explicit list, not a directory copy: macOS .DS_Store droppings on the
+# control machine must never reach the host or trigger rebuilds. Keep in
+# sync with igc-y in files/src/Makefile.
+- name: Copy the driver sources.
+  ansible.builtin.copy:
+    src: "src/{{ item }}"
+    dest: "/usr/local/src/igc-ppsfix/{{ item }}"
+    mode: preserve
+  loop:
+    - Makefile
+    - remake
+    - igc.h
+    - igc_base.c
+    - igc_base.h
+    - igc_defines.h
+    - igc_diag.c
+    - igc_diag.h
+    - igc_dump.c
+    - igc_ethtool.c
+    - igc_hw.h
+    - igc_i225.c
+    - igc_i225.h
+    - igc_leds.c
+    - igc_mac.c
+    - igc_mac.h
+    - igc_main.c
+    - igc_nvm.c
+    - igc_nvm.h
+    - igc_phy.c
+    - igc_phy.h
+    - igc_ptp.c
+    - igc_regs.h
+    - igc_tsn.c
+    - igc_tsn.h
+    - igc_xdp.c
+    - igc_xdp.h
+  register: igc_ppsfix_sources
+
+# The install path is per-kernel, so a kernel upgrade also retriggers this.
+- name: Check for an installed module for this kernel.
+  ansible.builtin.stat:
+    path: /lib/modules/{{ ansible_kernel }}/updates/igc.ko
+  register: igc_ppsfix_installed
+
+# Skipped in check mode: the command module validates chdir even then,
+# and a fresh host has no build directory yet.
+- name: Build and install igc.ko for the running kernel.
+  ansible.builtin.command:
+    cmd: ./remake install
+    chdir: /usr/local/src/igc-ppsfix
+  when: >-
+    not ansible_check_mode
+    and (igc_ppsfix_sources.changed
+         or not igc_ppsfix_installed.stat.exists)
+  register: igc_ppsfix_build
+
+# igc is the boot NIC's driver: the initramfs loads it long before the
+# rootfs is visible, so whatever igc.ko the initramfs carries is what the
+# system runs. Skipping this leaves stock igc live even after a reboot.
+- name: Rebuild the initramfs so early boot loads the fixed driver.
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k {{ ansible_kernel }}
+  when: igc_ppsfix_build.changed
+
+# ---- Verify and flag the reboot -----------------------------------------
+
+- name: Inspect the on-disk igc module.
+  ansible.builtin.command:
+    cmd: modinfo igc
+  register: igc_ppsfix_modinfo
+  changed_when: false
+  check_mode: false
+
+# '/updates/igc.ko' proves ours resolves; 'updates/dkms' absent proves no
+# legacy DKMS install is shadowing it (depmod prefers updates/dkms, so its
+# mere presence would win).
+- name: Assert depmod resolves the PPS-fixed module.
+  ansible.builtin.assert:
+    that:
+      - "'/updates/igc.ko' in igc_ppsfix_modinfo.stdout"
+      - "'updates/dkms' not in igc_ppsfix_modinfo.stdout"
+      - "'edge_check_delay_us' in igc_ppsfix_modinfo.stdout"
+      - "'edge_check_invert' in igc_ppsfix_modinfo.stdout"
+    fail_msg: >-
+      modinfo igc does not resolve to the PPS-fixed build under
+      /lib/modules/<kver>/updates/; check for DKMS leftovers and depmod.
+  when: not ansible_check_mode
+
+- name: Read srcversion of the on-disk igc module.
+  ansible.builtin.command:
+    cmd: modinfo -F srcversion igc
+  register: igc_ppsfix_disk_srcver
+  changed_when: false
+  check_mode: false
+
+# Missing when igc is not loaded (never the case on the GM; keeps the role
+# safe elsewhere).
+- name: Read srcversion of the running igc module.
+  ansible.builtin.slurp:
+    src: /sys/module/igc/srcversion
+  register: igc_ppsfix_live_srcver
+  failed_when: false
+
+# Catches both a fresh install (stock live vs patched on disk) and a host
+# that skipped an earlier reboot: keeps flagging until the running module
+# matches the disk.
+- name: Determine whether the running igc matches the on-disk build.
+  ansible.builtin.set_fact:
+    igc_ppsfix_needs_reboot: >-
+      {{ igc_ppsfix_live_srcver.content is defined and
+         (igc_ppsfix_live_srcver.content | b64decode | trim)
+         != (igc_ppsfix_disk_srcver.stdout | trim) }}
+
+# Set true-only, never false: the fact is shared with roles/timecard, and
+# a boolean assignment here would clobber its flag.
+- name: Flag a reboot to load the PPS-fixed igc.
+  ansible.builtin.set_fact:
+    reboot_required: true
+  when: igc_ppsfix_needs_reboot
+
+- name: Warn that the running igc is still the stock driver.
+  ansible.builtin.debug:
+    msg: >-
+      igc-ppsfix is installed on disk but the RUNNING igc is still the old
+      driver. deploy.yml reboots next (defer with --skip-tags reboot);
+      NEVER reload igc live -- it carries the SSH session.
+  when: igc_ppsfix_needs_reboot

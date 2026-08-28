@@ -1,7 +1,7 @@
 ---
 # Role order matters for handlers: handlers fire in definition order, and
 # roles register theirs in listing order. 'timecard' must precede the PTP
-# roles so "Run timecard-sma" (SMA routing + kernel PPS enable) fires before
+# roles so "Run timecard-sma" (SMA routing) fires before
 # ts2phc/ptp4l restart.
 - name: Deploy PTP grandmaster
   hosts: server
@@ -26,26 +26,17 @@
       when: tgpio_pps_enabled | default(false)
       tags: [tgpio]
 
-    # - name: Install igc-ppsfix DKMS driver (TimeNIC I226 PPS fixes, see igc-ppsfix/).
-    #   ansible.builtin.import_role:
-    #     name: dkms_module
-    #   when: igc_ppsfix_enabled | default(false)
-    #   tags: [dkms]
-    #   vars:
-    #     dkms_name: igc
-    #     dkms_display: igc-ppsfix
-    #     dkms_version: "{{ igc_ppsfix_version }}"
-    #     dkms_src: "{{ playbook_dir }}/igc-ppsfix/dkms/"
-    #     dkms_deploy_path: "{{ igc_ppsfix_deploy_path }}"
-    #     dkms_reboot_pkg: igc-ppsfix-dkms
-    #     dkms_modinfo_asserts: ['/updates/', 'edge_check_delay_us', 'edge_check_invert']
-    #     dkms_auto_reboot: "{{ igc_ppsfix_auto_reboot | default(false) }}"
+    - name: Build the PPS-fixed igc driver for the TimeNIC (see roles/igc_ppsfix/).
+      ansible.builtin.import_role:
+        name: igc_ppsfix
+      when: igc_ppsfix_enabled | default(false)
+      tags: [igc]
 
-    - name: Reboot to apply Timecard and TGPIO boot-time configuration.
+    - name: Reboot to apply boot-time configuration (Timecard blacklist, igc-ppsfix).
       ansible.builtin.reboot:
         reboot_timeout: 600
         test_command: test -e /dev/ptp-timecard
-      when: timecard_reboot_required | default(false)
+      when: reboot_required | default(false)
       tags: [reboot]
 
     - name: Build linuxptp and configure ptp4l/ts2phc.
