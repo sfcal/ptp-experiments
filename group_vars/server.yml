@@ -9,7 +9,7 @@ gpsd_options: "-s {{ gpsd_baud }} -n"
 # ===[ Timecard/System ]====================================================
 
 timecard_sma:
-  sma1: "OUT: PHC"    # FPGA PPS out -> cable to TimeNIC PPS IN
+  sma1: "OUT: GNSS1"    # FPGA PPS out -> cable to TimeNIC PPS IN
   sma2: "OUT: 10Mhz"  # TICC 10Mhz reference
   sma3: "OUT: PHC"
 

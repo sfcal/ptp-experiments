@@ -1,0 +1,56 @@
+-0.00000001662
+00000001980
+-0.00000001806
+-0.00000001904
+-0.00000002079
+-0.00000002213
+-0.00000000935
+-0.00000001121
+-0.00000001686
+-0.00000001980
+# 
+# TAPR TICC Timestamping Counter
+# Copyright 2016-2025 N8UR, K9TRV, NH6Z, WA8YWQ
+# 
+# #####################
+# TICC Configuration: 
+# Software Version: 20251215.1 (RELEASE)
+# EEPROM Version: 13, Board Version: D
+# Board Serial Number: 46F08E3E
+# Measurement Mode: Time Interval ch0->ch1
+# Timestamp Wrap: 0 (no wrap)
+# Output Decimal Places: 11
+# SyncMode: P
+# Serial Baud Rate: 115200
+# Channel Names: A/B (C)
+# Poll Character: none
+# Clock Speed: 10.000000 MHz
+# Coarse tick: 100.000000 usec
+# Cal Periods: 20
+# Propagation Delay ps: 0 (ch0), 0 (ch1)
+# Timeout: 0x05
+# Time Dilation ps: 2500 (ch0), 2500 (ch1)
+# fixedTime2 ps: 0 (ch0), 0 (ch1)
+# FUDGE0 ps: 0 (ch0), 0 (ch1)
+# #####################
+# 
+# Type any character for config menu
+# ............................
+# 
+# time interval ch0->ch1 (seconds with 11 decimal places)
+-0.00000002599
+-0.00000002770
+-0.00000001487
+-0.00000001744
+-0.00000001960
+-0.00000002214
+-0.00000002307
+-0.00000002607
+-0.00000001305
+-0.00000001642
+-0.00000001993
+-0.00000002164
+-0.00000002282
+-0.00000002487
+-0.00000000958
+-0.00000001266
