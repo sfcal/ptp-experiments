@@ -55,11 +55,6 @@ chrony_allow: "10.3.0.0/16"
 
 
 # ===[ Linuxptp ]==========================================================
-network_interface: "enp1s0"
-
-# PTP runs on the primary NIC; override per host if needed.
-ptp4l_ptp_iface: "{{ network_interface }}"
-
 # linuxptp is built from source on each host for the latest features.
 # Install paths are hardcoded in the roles, deliberately not variables:
 # source builds live in /usr/local/src/<name> and install to
@@ -84,13 +79,9 @@ linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
 # template gone too, the software baseline is not currently deployable.)
 ts2phc_enabled: true
 
-# Every service running a binary from the linuxptp build; the role's
-# handler restarts these after a rebuild.
-linuxptp_managed_services:
-  - ptp4l
-  - ts2phc
-
 # ── ptp4l ───────────────────────────────────────────────────────────────
+# PTP runs on the primary NIC; override per host if needed.
+ptp4l_ptp_iface: "enp1s0"
 
 # Grandmaster-specific ptp4l.conf directives (appended to the shared header
 # in roles/ptp4l/templates/ptp4l.conf.j2).
@@ -121,3 +112,4 @@ ptp4l_conf_extra: |
 # extts events).
 
 # ── phc2sys ───────────────────────────────────────────────────────────────
+# TODO

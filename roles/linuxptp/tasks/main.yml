@@ -24,7 +24,7 @@
     cmd: make -j "$(nproc)" && make install
     chdir: "/usr/local/src/linuxptp"
   when: linuxptp_src.changed
-  notify: Restart linuxptp services
+  #notify: Restart linuxptp services Fix this later
 
 - name: Install testptp.
   ansible.builtin.import_tasks: testptp.yml

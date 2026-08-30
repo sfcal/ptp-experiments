@@ -1,15 +1,5 @@
 ---
-# PTP clients (Raspberry Pi): ptp4l disciplines the NIC PHC from the
-# grandmaster, chrony steers the system clock from the PHC refclock.
-ptp_role: slave
-
-system_timezone: Europe/London
-
-network_interface: "eth0"
-
-# PTP runs on the primary NIC; override per host if needed.
-ptp4l_ptp_iface: "{{ network_interface }}"
-
+# ===[ Linuxptp ]==========================================================
 # linuxptp is built from source on each host for the latest features.
 # Install paths are hardcoded in the roles, deliberately not variables:
 # source builds live in /usr/local/src/<name> and install to
@@ -18,10 +8,9 @@ ptp4l_ptp_iface: "{{ network_interface }}"
 linuxptp_repo: git://git.code.sf.net/p/linuxptp/code
 linuxptp_version: f98cb5de87e63696599c59d0a9df7dc04d08d40d
 
-# Driver owning the PHC that ptp4l uses on this NIC (udev DRIVERS match for
-# the /dev/ptp-nic symlink). Pi 5 onboard = the Broadcom PHY; hosts with an
-# i226 PTP NIC override with "igc" (see host_vars/10.3.30.12.yml).
-nic_phc_driver: "Broadcom BCM54213PE"
+# ── ptp4l ───────────────────────────────────────────────────────────────
+
+ptp4l_ptp_iface: "eth0"
 
 # Client-specific ptp4l.conf directives (appended to the shared header in
 # roles/ptp4l/templates/ptp4l.conf.j2).
@@ -45,5 +34,3 @@ ptp4l_conf_extra: |
 # Ubuntu's base chrony.conf. dpoll -4 = 16 reads/s, median-filtered.
 chrony_refclock: "refclock PHC /dev/ptp-nic poll 0 dpoll -4 refid PHC tai prefer"
 
-# apt prometheus-node-exporter's textfile collector directory.
-ptp_metrics_textfile_dir: /var/lib/prometheus/node-exporter
