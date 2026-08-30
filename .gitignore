@@ -1,6 +1,9 @@
 # Marimo notebook session cache (generated, large)
 analysis/__marimo__/
 
+# Raw data
+analysis/data/raw
+
 # Python
 __pycache__/
 *.pyc
