@@ -35,14 +35,16 @@
     mode: "0644"
   notify: Run timecard-sma
 
+# Under a stale (stock) ptp_ocp the script cannot apply -- every SMA write
+# returns EOPNOTSUPP -- so only enable the unit then; it runs at the boot
+# that loads the right driver (driver.yml flags that reboot).
 - name: Enable timecard-sma at boot and ensure it has applied.
   ansible.builtin.systemd_service:
     name: timecard-sma
     enabled: true
-    state: started
+    state: "{{ omit if (timecard_driver_stale | default(false)) else 'started' }}"
     daemon_reload: true
   when: timecard_sma is defined
 
 - name: Configure GPS.
   ansible.builtin.include_tasks: gps.yml
-

@@ -1,0 +1,16 @@
+# {{ ansible_managed }} (roles/ntpheat)
+# Instantiate the TMP117 on i2c-{{ tmp117_i2c_bus }} at {{ tmp117_i2c_addr }} so the tmp117 IIO
+# driver binds. There is no firmware node for the part, so this is the
+# only way to get it enumerated; idempotent (skips if the device exists).
+[Unit]
+Description=Instantiate TMP117 temperature sensor on i2c-{{ tmp117_i2c_bus }}
+After=systemd-modules-load.service
+ConditionPathExists=/sys/bus/i2c/devices/i2c-{{ tmp117_i2c_bus }}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'test -e /sys/bus/i2c/devices/{{ tmp117_sysfs_name }} || echo tmp117 {{ tmp117_i2c_addr }} > /sys/bus/i2c/devices/i2c-{{ tmp117_i2c_bus }}/new_device'
+
+[Install]
+WantedBy=multi-user.target

@@ -48,7 +48,7 @@ profile reused the name.
 
 - `deploy.yml` — the main playbook; a grandmaster play and a clients play.
   Tags: `timecard`, `tgpio`, `igc`, `reboot`, `ptp`, `chrony`,
-  `monitoring`, `ticc`. (Node IPs are provisioned by netboot; nothing here
+  `thermal` (or `tmp117` / `ntpheat` for one half), `monitoring`, `ticc`. (Node IPs are provisioned by netboot; nothing here
   manages addressing.)
 - `reset.yml` — hard-reset CM5 nodes (VC reboot flags + reboot); requires
   `-e reset_hosts=...`.
@@ -59,8 +59,15 @@ profile reused the name.
   `igc_ppsfix` (host source build of the PPS-fixed igc, like `timecard`'s
   ptp_ocp build), `linuxptp` (source build,
   pinned commit in `group_vars/all.yml`), `ptp4l`, `gm_pipeline`,
-  `ptp_metrics` (textfile collector), `monitoring_server` (GM), and
-  `monitoring_agent` (clients).
+  `ptp_metrics` (textfile collector), `monitoring_server` (GM),
+  `monitoring_agent` (clients), and `ntpheat` (GM, two task files each
+  behind its own flag: `tasks/tmp117.yml` enumerates the external TI
+  TMP117 I2C temperature sensor at boot with a `tmp117.sh` readout, and
+  `tasks/ntpheat.yml` installs the SCHED_IDLE CPU heater that holds the
+  TMP117 temperature at a setpoint so the system-clock crystal stops
+  following the room; after
+  [ntpheat](https://www.satsignal.eu/ntp/Raspberry-Pi-ntpheat.html), tune
+  with the `ntpheat_duty_ratio` metric).
 - `vars/gm_pipelines/` — one file per GM pipeline profile.
 - `files/dashboards/` — Grafana dashboard JSON, source of record.
 - `analysis/` — marimo notebook for TICC ADEV analysis (not deployed).
@@ -97,8 +104,12 @@ class (FHS 3.0):
 ## Patched drivers
 
 Both are built on the host from vendored source and installed to
-`/lib/modules/<kver>/updates/` (no DKMS: after a kernel upgrade the stock
-drivers run until the next deploy run rebuilds for the new kernel):
+`/lib/modules/<kver>/updates/` (no DKMS). The roles build for **every
+bootable kernel** (`linux-version list`), not just the running one:
+unattended-upgrades installs kernels unprompted and GRUB boots the newest,
+so a kernel nobody built for boots the stock drivers and looks like dead
+hardware (2026-10-08). A kernel installed *after* the last deploy still
+runs stock until the next run.
 
 - **igc-ppsfix** (`roles/igc_ppsfix`, source in its `files/src/`) — i226
   EXTTS/PEROUT fixes; required for ts2phc on the TimeNIC. Installs **to
@@ -106,11 +117,17 @@ drivers run until the next deploy run rebuilds for the new kernel):
   task — never reloaded live: the igc NIC carries the SSH session.
 - **ptp_ocp** (`roles/timecard`, source in its `files/src/`) — out-of-tree
   PTM-capable build. **Required**: the Time Card runs a PTM FPGA image the
-  stock in-tree driver cannot drive (all-ones registers, wedged udev —
-  looks exactly like dead hardware). Loaded live by the role.
+  stock in-tree driver cannot drive (all-ones registers, `EOPNOTSUPP` on
+  every SMA write, chronyd spinning at 100% on the garbage PHC — looks
+  exactly like dead hardware). Loaded live by the role on a fresh host;
+  after a kernel upgrade the stock driver is already loaded (and pinned by
+  gpsd/chrony), so the role flags the reboot instead and skips the SMA
+  routing until then.
 
-After a kernel upgrade, re-run the deploy: the igc role keeps flagging the
-reboot on every run until the *running* module matches the on-disk build.
+After a kernel upgrade, re-run the deploy: both driver roles compare the
+*running* module with the on-disk build and keep flagging the reboot until
+they match; after rebooting, the play verifies the out-of-tree builds came
+up before touching the time services.
 
 ## Monitoring
 

@@ -7,8 +7,9 @@ PHC-to-PHC copy through the system clock's oscillator.
 **The install is automated** by this role in the main deployment
 (gated by `igc_ppsfix_enabled` in `group_vars/server.yml`): Ansible copies
 `files/src/` to `/usr/local/src/igc-ppsfix`, runs `./remake install`
-(build + install to `/lib/modules/<kver>/updates/igc.ko` + depmod — same
-pattern as `roles/timecard` for ptp_ocp), rebuilds the initramfs, and flags
+for every bootable kernel (`linux-version list`; build + install to
+`/lib/modules/<kver>/updates/igc.ko` + depmod — same pattern as
+`roles/timecard` for ptp_ocp), rebuilds each kernel's initramfs, and flags
 deploy.yml's shared reboot task when the running module differs from the
 on-disk one. A leftover DKMS igc install would shadow the module (depmod
 searches `updates/dkms` before `updates`), so the role asserts none is
@@ -74,9 +75,11 @@ sudo reboot
 which depmod prefers over the in-tree driver, and runs depmod. The
 initramfs rebuild matters: igc is the boot NIC's driver and loads from the
 initramfs, so without it the stock module stays live even after a reboot.
-Unlike DKMS there is no automatic rebuild on kernel package updates — a
-new kernel runs the stock driver (NIC fine, PPS fix absent) until the next
-deploy run rebuilds for it. Verify which module is live:
+Unlike DKMS there is no automatic rebuild on kernel package updates: the
+role builds for every bootable kernel so one installed by
+unattended-upgrades is covered before it is first booted, but a kernel
+installed after the last deploy runs the stock driver (NIC fine, PPS fix
+absent) until the next run. Verify which module is live:
 
 ```bash
 modinfo igc | grep -E 'filename|edge_check'

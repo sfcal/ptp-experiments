@@ -10,6 +10,11 @@
     daemon_reload: true
   # In --check on a fresh host the unit file hasn't been written yet.
   ignore_errors: "{{ ansible_check_mode }}"
+  # Under a stale (stock) ptp_ocp the script cannot apply (EOPNOTSUPP);
+  # the already-deployed script runs at the boot that loads the right
+  # driver instead (the fact stays set after deploy.yml's reboot, which is
+  # fine: that boot has applied it).
+  when: not (timecard_driver_stale | default(false))
 
 - name: Restart gpsd
   ansible.builtin.service:

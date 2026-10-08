@@ -54,6 +54,46 @@ chrony_server_options: iburst xleave
 chrony_allow: "10.3.0.0/16"
 
 
+# ===[ ntpheat ]===========================================================
+# SCHED_IDLE CPU heater holding the N100 package at a setpoint so the ART
+# crystal stops following room temperature (roles/ntpheat). Measured
+# 2026-09-04 with the CPU pinned at 1.6 GHz (BIOS SpeedStep+Turbo on, PL
+# 12 W; the pin itself is host-only GRUB config on the GM, not in this repo):
+# idle 55-56 C at 3.8 W, all four AES burners 7.3 W for a ceiling around
+# 72-75 C. The setpoint sits low in that range: ~6 C of margin for a warmer
+# room before the heater floats, ~10 C for a colder one before it saturates.
+# Tune against ntpheat_duty_ratio in Prometheus: ~1.0 means the burners
+# can't reach it (lower the setpoint), ~0.0 means the room is doing the work
+# (raise it). At the old 800 MHz base ratio the range was only 52-60 C.
+#
+# 2026-09-05: the controller now reads the external TMP117 (below)
+# instead of the package sensor, so the setpoint and gains are in TMP117
+# terms. Open-loop step test that evening (heater 0 -> 100%, 3.6 -> 7.3 W
+# package power, ~22 C room): the TMP117 rose ~5 C per unit duty with a
+# ~1000 s time constant and ~20 s dead time, against a 14 C package rise.
+# So the heater has only ~5 C of authority over this sensor: a room change
+# of much more than +/-2 C saturates it (duty pinned at 0 or 1). The
+# heater-off level settled at ~46.3 C once the enclosure had re-warmed
+# after the sensor was fitted, so full burn is ~51 C and 48.5 C sits
+# mid-range for a duty near 0.45. Gains are SIMC for that plant
+# (tau_c = tau/2): damping ratio ~1 for any gain between 3 and 7 C/duty,
+# ~12 min closed-loop time constant, settles in ~40 min. Retune the
+# setpoint from ntpheat_duty_ratio if the season moves the room.
+ntpheat_enabled: true
+ntpheat_iio_name: tmp117
+ntpheat_target_temp: 48.5
+ntpheat_kp: 0.4
+ntpheat_ki: 0.0004
+ntpheat_copies: 4
+
+# ===[ tmp117 ]============================================================
+# External TI TMP117 temperature sensor on the Mu's host I2C bus 3 at 0x48
+# (roles/ntpheat, tasks/tmp117.yml); ntpheat regulates on it.
+# Read it with `tmp117.sh` (or `tmp117.sh 1` to stream).
+tmp117_enabled: true
+tmp117_i2c_bus: 3
+tmp117_i2c_addr: "0x48"
+
 # ===[ Linuxptp ]==========================================================
 # linuxptp is built from source on each host for the latest features.
 # Install paths are hardcoded in the roles, deliberately not variables:

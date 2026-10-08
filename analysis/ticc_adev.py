@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.23.16"
+__generated_with = "0.24.0"
 app = marimo.App(width="medium")
 
 
@@ -21,8 +21,9 @@ def _():
     import allantools
     import matplotlib.pyplot as plt
     from pathlib import Path
+    from ticc_log import parse_ticc
 
-    return Path, allantools, mo, np, plt
+    return Path, allantools, mo, np, parse_ticc, plt
 
 
 @app.cell
@@ -30,10 +31,17 @@ def _(mo):
     mo.md("""
     # TAPR TICC — ADEV & time-interval analysis
 
-    Parses picocom logs from the TICC (`# `-prefixed header lines are
-    skipped, anything that doesn't parse as a float is ignored). Readings
-    are treated as **phase data** (time interval A→B, seconds) sampled at
-    one reading per `tau0`.
+    Parses TICC capture logs via `ticc_log.py` (`# `-prefixed header lines
+    are skipped, anything that doesn't parse is ignored). Time Interval
+    readings are used as-is; in **Timestamp** mode each chA event is paired
+    with the nearest chB event and chB − chA is used, so either mode gives
+    the same **phase data** (time interval A→B, seconds) sampled at one
+    reading per `tau0`. Timestamp captures can also be analysed **per
+    channel**, each channel's timestamps against the TICC's 10 MHz EXT_REF
+    (here the Timecard's own oscillator) with no pairing at all — pick the
+    series below. A constant frequency offset of EXT_REF shows up there as a
+    phase ramp; ADEV ignores it, the phase plot doesn't, hence the detrend
+    option.
 
     Select **multiple files** to compare captures side by side — every plot
     overlays the selected datasets. With nothing selected, all `.log` files
@@ -93,32 +101,56 @@ def _(Path, file_browser, mo):
 
 
 @app.cell
-def _(mo, np, watched_files):
-    def parse_ticc(f):
-        """Return the numeric readings from a TICC/picocom log as a float array."""
-        vals = []
-        # FileState.read_text() decodes strictly; serial captures can contain
-        # garbage bytes, so decode leniently ourselves.
-        for line in f.read_bytes().decode(errors="ignore").splitlines():
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            try:
-                vals.append(float(s.split()[0]))
-            except ValueError:
-                continue  # partial first/last lines, menu echoes, etc.
-        return np.asarray(vals)
+def _(mo, parse_ticc, watched_files):
+    logs = {}
+    _notes = []
+    for _f in watched_files:
+        # read_bytes: serial captures can contain garbage bytes and
+        # FileState.read_text() decodes strictly; the parser is lenient.
+        logs[_f.name] = parse_ticc(_f.read_bytes())
+        _notes.append(f"`{_f.name}`: {logs[_f.name].describe()}")
+    mo.md("\n".join(f"- {_n}" for _n in _notes))
+    return (logs,)
 
+
+@app.cell
+def _(logs, mo):
+    _channels = sorted({_c for _l in logs.values() for _c in _l.channel_phase})
+    _options = {"A→B interval (paired)": "pair"}
+    _options.update({f"ch{_c} vs EXT_REF (unpaired)": _c for _c in _channels})
+    series_select = mo.ui.multiselect(
+        options=_options, value=["A→B interval (paired)"], label="Series"
+    )
+    detrend = mo.ui.checkbox(
+        value=True, label="Remove linear trend (per-channel series only)"
+    )
+    mo.hstack([series_select, detrend], justify="start", wrap=True)
+    return detrend, series_select
+
+
+@app.cell
+def _(detrend, logs, mo, np, series_select):
+    # name -> phase array (seconds). One entry per (file, series) that exists.
     raw_data = {}
     _skipped = []
-    for _f in watched_files:
-        _vals = parse_ticc(_f)
-        if _vals.size >= 8:
-            raw_data[_f.name] = _vals
-        else:
-            _skipped.append(f"`{_f.name}` ({_vals.size} readings)")
+    for _fname, _log in logs.items():
+        for _sel in series_select.value:
+            if _sel == "pair":
+                _name, _phase = _fname, _log.phase
+            else:
+                _name = f"{_fname} [ch{_sel}]"
+                _phase = _log.channel_phase.get(_sel)
+                if _phase is None:
+                    continue  # this file has no timestamp events on that channel
+                if detrend.value:
+                    _i = np.arange(_phase.size)
+                    _phase = _phase - np.polyval(np.polyfit(_i, _phase, 1), _i)
+            if _phase.size >= 8:
+                raw_data[_name] = _phase
+            else:
+                _skipped.append(f"`{_name}` ({_phase.size} readings)")
 
-    mo.stop(not raw_data, mo.md("**No usable data in the selected file(s).**"))
+    mo.stop(not raw_data, mo.md("**No usable data for the selected file(s) and series.**"))
     mo.md(f"_Skipped (too few readings): {', '.join(_skipped)}_" if _skipped else "")
     return (raw_data,)
 
@@ -252,7 +284,7 @@ def _(datasets, file_colors, np, plt, tau0_input):
 @app.cell
 def _(mo):
     dev_select = mo.ui.multiselect(
-        options=["ADEV", "OADEV", "MDEV", "HDEV"],
+        options=["ADEV", "OADEV", "MDEV", "HDEV", "OHDEV"],
         value=["OADEV"],
         label="Deviations to plot",
     )
@@ -261,15 +293,25 @@ def _(mo):
 
 
 @app.cell
-def _(allantools, datasets, dev_select, file_colors, mo, plt, tau0_input, tau_spacing):
+def _(
+    allantools,
+    datasets,
+    dev_select,
+    file_colors,
+    mo,
+    plt,
+    tau0_input,
+    tau_spacing,
+):
     _funcs = {
         "ADEV": allantools.adev,
         "OADEV": allantools.oadev,
         "MDEV": allantools.mdev,
         "HDEV": allantools.hdev,
+        "OHDEV": allantools.ohdev,
     }
-    _markers = {"ADEV": "o", "OADEV": "o", "MDEV": "^", "HDEV": "v"}
-    _styles = {"ADEV": "--", "OADEV": "-", "MDEV": "-.", "HDEV": ":"}
+    _markers = {"ADEV": "o", "OADEV": "o", "MDEV": "^", "HDEV": "v", "OHDEV": "v"}
+    _styles = {"ADEV": "--", "OADEV": "-", "MDEV": "-.", "HDEV": ":", "OHDEV": (0, (5, 1, 1, 1, 1, 1))}
     _rate = 1.0 / tau0_input.value
 
     mo.stop(not dev_select.value, mo.md("**Pick at least one deviation type.**"))

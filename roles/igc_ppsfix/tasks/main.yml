@@ -9,12 +9,26 @@
 # chrony/ts2phc hold the clocks open. Unlike ptp_ocp, igc is the boot
 # NIC's driver and is loaded FROM THE INITRAMFS, so every install must
 # also rebuild the initramfs -- the rootfs copy alone never runs.
+#
+# Built for EVERY bootable kernel (linux-version list), not just the
+# running one: unattended-upgrades installs kernels unprompted and GRUB
+# boots the newest, so a running-kernel-only build leaves the next boot on
+# the stock igc (NIC fine, PPS fix absent, ts2phc broken).
 
-- name: Install kernel build prerequisites.
+- name: List bootable kernels (every version with a vmlinuz in /boot).
+  ansible.builtin.command:
+    cmd: linux-version list
+  register: igc_ppsfix_kernel_list
+  changed_when: false
+  check_mode: false
+
+- name: Collect the kernels to build for.
+  ansible.builtin.set_fact:
+    igc_ppsfix_kernels: "{{ (igc_ppsfix_kernel_list.stdout_lines + [ansible_kernel]) | unique }}"
+
+- name: Install kernel build prerequisites and headers for every bootable kernel.
   ansible.builtin.apt:
-    name:
-      - build-essential
-      - "linux-headers-{{ ansible_kernel }}"
+    name: "{{ ['build-essential'] + (igc_ppsfix_kernels | map('regex_replace', '^', 'linux-headers-') | list) }}"
     state: present
 
 # ---- Build and install ---------------------------------------------------
@@ -63,31 +77,38 @@
     - igc_xdp.h
   register: igc_ppsfix_sources
 
-# The install path is per-kernel, so a kernel upgrade also retriggers this.
-- name: Check for an installed module for this kernel.
+# The install path is per-kernel, so a new kernel also triggers a build.
+- name: Check for an installed module for each bootable kernel.
   ansible.builtin.stat:
-    path: /lib/modules/{{ ansible_kernel }}/updates/igc.ko
+    path: "/lib/modules/{{ item }}/updates/igc.ko"
+  loop: "{{ igc_ppsfix_kernels }}"
   register: igc_ppsfix_installed
 
-# Skipped in check mode: the command module validates chdir even then,
-# and a fresh host has no build directory yet.
-- name: Build and install igc.ko for the running kernel.
-  ansible.builtin.command:
-    cmd: ./remake install
+# One build directory serves every kernel, so clean between targets:
+# kbuild would otherwise reuse objects compiled against another kernel's
+# headers. Skipped in check mode: the shell module validates chdir even
+# then, and a fresh host has no build directory yet.
+- name: Build and install igc.ko for each kernel that lacks a current one.
+  ansible.builtin.shell:
+    cmd: ./remake clean && ./remake install
     chdir: /usr/local/src/igc-ppsfix
+  environment:
+    KVER: "{{ item.item }}"
+  loop: "{{ igc_ppsfix_installed.results }}"
+  loop_control:
+    label: "{{ item.item }}"
   when: >-
     not ansible_check_mode
-    and (igc_ppsfix_sources.changed
-         or not igc_ppsfix_installed.stat.exists)
+    and (igc_ppsfix_sources.changed or not item.stat.exists)
   register: igc_ppsfix_build
 
 # igc is the boot NIC's driver: the initramfs loads it long before the
 # rootfs is visible, so whatever igc.ko the initramfs carries is what the
 # system runs. Skipping this leaves stock igc live even after a reboot.
-- name: Rebuild the initramfs so early boot loads the fixed driver.
+- name: Rebuild the initramfs of every kernel that got a new igc.ko.
   ansible.builtin.command:
-    cmd: update-initramfs -u -k {{ ansible_kernel }}
-  when: igc_ppsfix_build.changed
+    cmd: update-initramfs -u -k {{ item }}
+  loop: "{{ igc_ppsfix_build.results | selectattr('changed') | map(attribute='item.item') | list }}"
 
 # ---- Verify and flag the reboot -----------------------------------------
 

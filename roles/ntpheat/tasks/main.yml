@@ -1,0 +1,18 @@
+---
+# Two independent pieces, each behind its own enable flag and tag:
+#   tmp117.yml  - the external TI TMP117 I2C sensor (driver, boot-time
+#                 instantiation unit, tmp117.sh readout).
+#   ntpheat.yml - the SCHED_IDLE CPU heater that regulates on it.
+# Sensor first: ntpheat.service orders itself after tmp117-i2c.service.
+# `--tags tmp117` or `--tags ntpheat` runs one half; deploy.yml's tag
+# runs both.
+
+- name: Enumerate the TMP117 external temperature sensor.
+  ansible.builtin.import_tasks: tmp117.yml
+  when: tmp117_enabled | default(false)
+  tags: [tmp117]
+
+- name: Install the ntpheat heater.
+  ansible.builtin.import_tasks: ntpheat.yml
+  when: ntpheat_enabled | default(false)
+  tags: [ntpheat]

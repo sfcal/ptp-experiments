@@ -32,10 +32,21 @@
       when: igc_ppsfix_enabled | default(false)
       tags: [igc]
 
-    - name: Reboot to apply boot-time configuration (Timecard blacklist, igc-ppsfix).
+    - name: Reboot to apply boot-time configuration (Timecard blacklist, igc-ppsfix, stale ptp_ocp).
       ansible.builtin.reboot:
         reboot_timeout: 600
         test_command: test -e /dev/ptp-timecard
+      when: reboot_required | default(false)
+      tags: [reboot]
+
+    - name: Verify the running Timecard/igc drivers are the out-of-tree builds.
+      ansible.builtin.shell:
+        cmd: |
+          live=$(cat /sys/module/{{ item }}/srcversion)
+          disk=$(modinfo -F srcversion {{ item }})
+          [ "$live" = "$disk" ] || { echo "{{ item }}: running $live != on-disk $disk" >&2; exit 1; }
+      changed_when: false
+      loop: "{{ ['ptp_ocp'] + (['igc'] if igc_ppsfix_enabled | default(false) else []) }}"
       when: reboot_required | default(false)
       tags: [reboot]
 
@@ -48,6 +59,12 @@
       ansible.builtin.import_role:
         name: chrony
       tags: [chrony]
+
+    - name: Hold the oscillator temperature steady (TMP117 sensor + ntpheat heater).
+      ansible.builtin.import_role:
+        name: ntpheat
+      when: (tmp117_enabled | default(false)) or (ntpheat_enabled | default(false))
+      tags: [thermal]
 
     - name: Deploy Prometheus exporters (scraped by homelab Prometheus).
       ansible.builtin.import_role:

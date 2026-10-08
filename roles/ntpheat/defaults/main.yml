@@ -1,0 +1,83 @@
+---
+# ntpheat: hold the GM's CPU package at a constant temperature by burning
+# idle cycles, so the oscillator that clocks CLOCK_REALTIME (the TSC/PCH
+# crystal, and the board air the NIC's crystal sits in) stops tracking
+# room temperature. Ported from the Raspberry Pi ntpheat idea
+# (https://www.satsignal.eu/ntp/Raspberry-Pi-ntpheat.html); the script in
+# files/ntpheat.py is a Python 3 rewrite with a duty-cycle controller, and
+# it picks the sensor by thermal-zone *type* because on the Mu zone0 is the
+# 28 C ACPI board sensor, not the CPU. tasks/main.yml gates the heater half
+# of the role (tasks/ntpheat.yml) on ntpheat_enabled; the TMP117 half is
+# the tmp117_* section below.
+ntpheat_enabled: false
+
+# Setpoint, degrees C. Must sit above the warmest natural idle temperature
+# (the N100 idles at ~53 C in the Mu, September) or the heater switches off
+# and the temperature floats; too high and it saturates at 100% duty.
+# Tune with the ntpheat_duty_ratio metric: it should hover well inside
+# 0..1 at steady state.
+ntpheat_target_temp: 60.0
+
+# Burner processes. Each pins one core at (duty x 100)% under SCHED_IDLE,
+# so it can never delay ptp4l/ts2phc/chrony. The GM runs all 4 N100 cores:
+# with frequency scaling removed (800 MHz fixed) a core adds only ~0.25 W
+# (measured 2026-09-04: 3.5 W idle, 4.4 W with 4 burners), so the heater
+# needs every core it can get.
+ntpheat_copies: 1
+
+# Sensor, in order of precedence:
+#  - ntpheat_sensor_path: an explicit sysfs file (thermal zone temp or IIO
+#    in_temp_raw), bypassing the lookups below.
+#  - ntpheat_iio_name: an IIO temperature device by name, e.g. "tmp117" for
+#    the external sensor tasks/tmp117.yml enumerates (the GM uses this; it sits
+#    next to the oscillator and reads +/-0.1 C in 7.8 mC steps, where the
+#    package sensor is a 1 C-step die hotspot). The unit then orders itself
+#    after tmp117-i2c.service.
+#  - ntpheat_thermal_zone_type: a /sys/class/thermal zone type (x86_pkg_temp
+#    is the Intel package sensor).
+# The setpoint is in the chosen sensor's terms: the TMP117 reads ~20 C
+# below the package at the same heat, so a switch means a new
+# ntpheat_target_temp.
+ntpheat_sensor_path: ""
+ntpheat_iio_name: ""
+ntpheat_thermal_zone_type: x86_pkg_temp
+
+# node_exporter textfile-collector directory for ntpheat_*.prom metrics
+# (Ubuntu's package default). "" disables the metrics file.
+ntpheat_textfile_dir: /var/lib/prometheus/node-exporter
+
+# Heat source: "openssl" (AES-256-GCM via `openssl speed`, ~50% more heat
+# per core than the Python loop on the N100) or "python" (in-process md5).
+ntpheat_burner: openssl
+
+# PI gains, duty per degree (kp) and duty per degree-second (ki), in the
+# chosen sensor's terms. The defaults are the package-sensor tuning: a fast
+# 1 C-step sensor wants a tiny P term and a brisk integrator. An external
+# board sensor like the TMP117 is a slow first-order plant (GM, measured
+# 2026-09-05 with a 0->100% duty step: ~5 C per unit duty, time constant
+# ~1000 s, ~20 s dead time) and with these gains it hunts with a ~35 min
+# period (damping ratio ~0.2); see group_vars/server.yml for the SIMC
+# tuning used there.
+ntpheat_kp: 0.02
+ntpheat_ki: 0.002
+
+# Extra ntpheat.py arguments, e.g. "--slot 0.1 --period 2".
+ntpheat_extra_args: ""
+
+# ===[ tmp117 ]============================================================
+# tmp117: a TI TMP117 (+/-0.1 C) I2C temperature sensor wired to one of the
+# Mu's host I2C buses as an external temperature reference for the ntpheat /
+# ART-stability work (the CPU package sensor is only a proxy for the crystal
+# temperature). The kernel driver is IIO (drivers/iio/temperature/tmp117),
+# not hwmon, and the Mu has no ACPI/DT node for the part, so the role
+# instantiates it by hand at boot through the bus's new_device file
+# (tasks/tmp117.yml). tasks/main.yml gates that half of the role on
+# tmp117_enabled; it can run without the heater and vice versa.
+tmp117_enabled: false
+
+# Host I2C bus the sensor sits on (/dev/i2c-N, one of the Synopsys
+# DesignWare LPSS adapters; the Timecard's xiic bus is a different number).
+tmp117_i2c_bus: 3
+
+# 7-bit I2C address. 0x48 with ADD0 to GND, 0x49/0x4a/0x4b for V+/SDA/SCL.
+tmp117_i2c_addr: "0x48"

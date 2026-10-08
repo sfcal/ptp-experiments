@@ -1,0 +1,33 @@
+# Managed by Ansible (roles/ntpheat).
+[Unit]
+Description=ntpheat: hold the {{ ntpheat_iio_name if ntpheat_iio_name else 'CPU package' }} temperature at {{ ntpheat_target_temp }} C for oscillator stability
+Documentation=https://www.satsignal.eu/ntp/Raspberry-Pi-ntpheat.html
+{% if ntpheat_iio_name == "tmp117" %}
+# The sensor only exists once tmp117-i2c.service (tasks/tmp117.yml) has
+# instantiated it.
+Wants=tmp117-i2c.service
+After=tmp117-i2c.service
+{% endif %}
+
+[Service]
+Type=exec
+ExecStart=/usr/local/sbin/ntpheat.py --temp {{ ntpheat_target_temp }} --copies {{ ntpheat_copies }} --burner {{ ntpheat_burner }} --kp {{ ntpheat_kp }} --ki {{ ntpheat_ki }}{% if ntpheat_sensor_path %} --sensor {{ ntpheat_sensor_path }}{% elif ntpheat_iio_name %} --iio-name {{ ntpheat_iio_name }}{% else %} --zone-type {{ ntpheat_thermal_zone_type }}{% endif %}{% if ntpheat_textfile_dir %} --metrics {{ ntpheat_textfile_dir }}/ntpheat.prom{% endif %}{% if ntpheat_extra_args %} {{ ntpheat_extra_args }}{% endif %}
+
+# The heater may only take cycles nobody else wants: SCHED_IDLE runs below
+# every normal-priority task, so ptp4l/ts2phc/chrony never wait behind it.
+CPUSchedulingPolicy=idle
+Nice=19
+OOMScoreAdjust=1000
+# Root only for the textfile write; everything else is fenced off.
+ProtectSystem=strict
+{% if ntpheat_textfile_dir %}
+ReadWritePaths={{ ntpheat_textfile_dir }}
+{% endif %}
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,14 +1,33 @@
 ---
 # Build and install the ptp_ocp driver from this role's files/src/
 # (out-of-tree, PTM-capable; see README.md alongside). remake compiles
-# against the running kernel's headers, installs ptp_ocp.ko under
+# against a kernel's headers, installs ptp_ocp.ko under
 # /lib/modules/<kver>/updates/, and runs depmod.
+#
+# Built for EVERY bootable kernel (linux-version list: each vmlinuz in
+# /boot), not just the running one. unattended-upgrades installs kernels
+# unprompted and GRUB boots the newest, so a running-kernel-only build
+# leaves the next boot on the stock in-tree ptp_ocp, which cannot drive the
+# PTM FPGA image (all-ones registers, EOPNOTSUPP on every SMA write,
+# chronyd/ts2phc chasing garbage). 2026-10-08: the GM booted 7.0.0-34 with
+# no build for it, and 7.0.0-38 was installed while the recovery deploy ran.
 
-- name: Install kernel build prerequisites.
+- name: List bootable kernels (every version with a vmlinuz in /boot).
+  ansible.builtin.command:
+    cmd: linux-version list
+  register: timecard_kernel_list
+  changed_when: false
+  check_mode: false
+
+# The running kernel is normally in the list; keep it even if its image
+# package has gone (apt never removes the running kernel, but be safe).
+- name: Collect the kernels to build for.
+  ansible.builtin.set_fact:
+    timecard_kernels: "{{ (timecard_kernel_list.stdout_lines + [ansible_kernel]) | unique }}"
+
+- name: Install kernel build prerequisites and headers for every bootable kernel.
   ansible.builtin.apt:
-    name:
-      - build-essential
-      - "linux-headers-{{ ansible_kernel }}"
+    name: "{{ ['build-essential'] + (timecard_kernels | map('regex_replace', '^', 'linux-headers-') | list) }}"
     state: present
 
 - name: Create the driver build directory.
@@ -28,21 +47,38 @@
     - remake
   register: ptp_ocp_sources
 
-# The install path is per-kernel, so a kernel upgrade also retriggers this.
-- name: Check for an installed module for this kernel.
+# The install path is per-kernel, so a new kernel also triggers a build.
+- name: Check for an installed module for each bootable kernel.
   ansible.builtin.stat:
-    path: /lib/modules/{{ ansible_kernel }}/updates/ptp_ocp.ko
+    path: "/lib/modules/{{ item }}/updates/ptp_ocp.ko"
+  loop: "{{ timecard_kernels }}"
   register: ptp_ocp_installed
 
-# Skipped in check mode: the command module validates chdir even then,
-# and a fresh host has no build directory yet.
-- name: Build and install ptp_ocp.ko for the running kernel.
-  ansible.builtin.command:
-    cmd: ./remake install
+# One build directory serves every kernel, so clean between targets:
+# kbuild would otherwise reuse objects compiled against another kernel's
+# headers. Skipped in check mode: the shell module validates chdir even
+# then, and a fresh host has no build directory yet.
+- name: Build and install ptp_ocp.ko for each kernel that lacks a current one.
+  ansible.builtin.shell:
+    cmd: ./remake clean && ./remake install
     chdir: "/usr/local/src/ptp_ocp"
+  environment:
+    KVER: "{{ item.item }}"
+  loop: "{{ ptp_ocp_installed.results }}"
+  loop_control:
+    label: "{{ item.item }}"
   when: >-
     not ansible_check_mode
-    and (ptp_ocp_sources.changed or not ptp_ocp_installed.stat.exists)
+    and (ptp_ocp_sources.changed or not item.stat.exists)
+  register: ptp_ocp_build
+
+# initramfs-tools copies /lib/modules/<kver>/updates/ into that kernel's
+# initramfs, and early-boot udev loads ptp_ocp from there -- so without a
+# refresh the initramfs keeps booting the previous build.
+- name: Rebuild the initramfs of every kernel that got a new ptp_ocp.ko.
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k {{ item }}
+  loop: "{{ ptp_ocp_build.results | selectattr('changed') | map(attribute='item.item') | list }}"
 
 # Rewrite the netboot-staged blacklist now that the working driver is on
 # disk: ptp_ocp comes off it, spi_nor goes on. spi_nor's probe of the
@@ -104,3 +140,52 @@
   community.general.modprobe:
     name: ptp_ocp
     state: present
+
+# A no-op above whenever some ptp_ocp is already loaded -- which, after a
+# kernel upgrade, is the STOCK in-tree one (loaded at boot because no build
+# existed for the new kernel yet). It cannot drive the PTM FPGA image:
+# sysfs reads all-ones, every SMA write fails with EOPNOTSUPP, and
+# chronyd/ts2phc chase garbage. The module is pinned by gpsd (ttyGNSS) and
+# chrony (the PHC), so it is not reloaded live: flag deploy.yml's shared
+# reboot and let tasks/main.yml skip the SMA routing until then. Compared
+# by srcversion, the same way roles/igc_ppsfix does.
+- name: Read srcversion of the on-disk ptp_ocp module for the running kernel.
+  ansible.builtin.command:
+    cmd: modinfo -k {{ ansible_kernel }} -F srcversion ptp_ocp
+  register: ptp_ocp_disk_srcver
+  changed_when: false
+  check_mode: false
+  # In --check on a fresh host nothing has been built yet.
+  failed_when: false
+
+# Missing when ptp_ocp is not loaded (fresh host: the modprobe above loads
+# the build just installed, so it cannot be stale).
+- name: Read srcversion of the running ptp_ocp module.
+  ansible.builtin.slurp:
+    src: /sys/module/ptp_ocp/srcversion
+  register: ptp_ocp_live_srcver
+  failed_when: false
+
+- name: Determine whether the running ptp_ocp matches the on-disk build.
+  ansible.builtin.set_fact:
+    timecard_driver_stale: >-
+      {{ ptp_ocp_live_srcver.content is defined and
+         (ptp_ocp_live_srcver.content | b64decode | trim)
+         != (ptp_ocp_disk_srcver.stdout | trim) }}
+
+# Set true-only, never false: the fact is shared with roles/igc_ppsfix.
+- name: Flag a reboot to replace the stale ptp_ocp.
+  ansible.builtin.set_fact:
+    reboot_required: true
+  when: timecard_driver_stale
+
+- name: Warn that the running ptp_ocp is not the on-disk build.
+  ansible.builtin.debug:
+    msg: >-
+      The RUNNING ptp_ocp (srcversion
+      {{ ptp_ocp_live_srcver.content | default('') | b64decode | trim }})
+      is not the on-disk build ({{ ptp_ocp_disk_srcver.stdout | trim }}).
+      After a kernel upgrade that is the stock in-tree driver, which cannot
+      drive the Timecard: SMA routing is skipped and deploy.yml reboots next
+      (defer with --skip-tags reboot).
+  when: timecard_driver_stale

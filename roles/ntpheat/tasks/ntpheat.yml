@@ -1,0 +1,49 @@
+---
+# ntpheat: a SCHED_IDLE CPU heater that holds the sensor temperature at a
+# setpoint (see the ntpheat_* section of defaults/main.yml for the why). Two files and a unit;
+# python3 is already on the host (Ubuntu). The textfile directory is
+# node_exporter's (roles/monitoring installs the package that creates it);
+# created here too so the unit's ReadWritePaths resolves even on a
+# --tags ntpheat run against a fresh host.
+
+- name: Install openssl for the AES burner.
+  ansible.builtin.apt:
+    name: openssl
+    state: present
+  when: ntpheat_burner == "openssl"
+
+- name: Deploy the ntpheat controller script.
+  ansible.builtin.copy:
+    src: ntpheat.py
+    dest: /usr/local/sbin/ntpheat.py
+    owner: root
+    group: root
+    mode: "0755"
+  register: ntpheat_script
+
+- name: Ensure the node_exporter textfile directory exists.
+  ansible.builtin.file:
+    path: "{{ ntpheat_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: ntpheat_textfile_dir | length > 0
+
+- name: Install the ntpheat unit.
+  ansible.builtin.template:
+    src: ntpheat.service.j2
+    dest: /etc/systemd/system/ntpheat.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: ntpheat_unit
+
+# Restarting resets the duty integrator to 0, so the temperature dips for a
+# minute or two while it re-settles; only do it when something changed.
+- name: Enable and start ntpheat.
+  ansible.builtin.systemd_service:
+    name: ntpheat
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if (ntpheat_script.changed or ntpheat_unit.changed) else 'started' }}"

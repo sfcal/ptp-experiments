@@ -1,7 +1,7 @@
 # TICC time analysis (marimo)
 
 Marimo notebook for analyzing TAPR TICC time-interval captures: phase/frequency
-plots, histograms, ADEV / OADEV / MDEV / HDEV, and TDEV (via
+plots, histograms, ADEV / OADEV / MDEV / HDEV / OHDEV, and TDEV (via
 [allantools](https://github.com/aewallin/allantools)).
 
 ## Capturing data
@@ -64,10 +64,47 @@ inline in the notebook (PEP 723) and installed into a sandbox automatically:
 uvx marimo edit --sandbox analysis/ticc_adev.py
 ```
 
+## Basic statistics walkthrough
+
+`basic_stats.py` is a companion learning notebook: sample mean vs population
+mean, the data vector split into residual + mean parts (and why the residual
+has *n*−1 degrees of freedom), the *n* vs *n*−1 variance bias demonstrated
+by subsampling a capture, and standard error vs the observed scatter of
+window means. It defaults to `data/test-F9T_20260903-175907.log`.
+
+```bash
+uvx marimo edit --sandbox analysis/basic_stats.py
+```
+
+`dof_geometry.py` is the picture behind that: the sample vector *X* drawn
+in ℝ² and ℝ³ (interactive plotly) split as error + expected-value vector
+and as residual + sample-mean vector, the right angle at *x̄*·**1**, the
+line/plane the residual is confined to, an optional cloud of random samples
+showing the residuals collapse onto it, and the expectation bookkeeping that
+gives α = 1/(*n*−1). Pure synthetic values from sliders — no capture needed.
+
+```bash
+uvx marimo edit --sandbox analysis/dof_geometry.py
+```
+
 ## Notes
 
 - Readings are treated as **phase data** (time interval A→B in seconds).
   With 1 PPS on both channels, τ₀ = 1 s (the default; adjustable in the UI).
+- Parsing lives in `ticc_log.py` (shared by both notebooks). Time Interval
+  and Period lines are used as-is. **Timestamp** mode lines (`<s> chA`) are
+  paired: each chA event with the nearest chB event within half the PPS
+  spacing, reading = chB − chA, unpaired events dropped; `Timestamp Wrap`
+  is undone. With only one channel present the reading is that channel's
+  phase against the TICC's 10 MHz EXT_REF. Files that change mode
+  mid-capture are handled line by line.
+- Timestamp captures can also be analysed **unpaired**: `TiccLog.channel_phase`
+  holds each channel's timestamps against EXT_REF (timestamp − pulse index ×
+  τ₀), which goes straight into `allantools.*(phase, data_type="phase")`.
+  The ADEV notebook's **Series** control switches between the paired
+  interval and each channel; EXT_REF here is the Timecard's own 10 MHz, so
+  chA alone shows the Timecard PPS against its raw oscillator (the GNSS
+  discipline steps) and chB alone the Mu against that oscillator.
 - The constant offset (e.g. readings near −2 s from timestamp wrap) doesn't
   matter — ADEV and friends are invariant to it, and plots remove the mean.
 - An optional MAD-based outlier filter (on by default, 5σ) drops PPS glitches

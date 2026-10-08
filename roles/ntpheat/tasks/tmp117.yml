@@ -1,0 +1,54 @@
+---
+# TMP117 external temperature sensor (see the tmp117_* section of
+# defaults/main.yml). Three pieces:
+# i2c-tools for bench debugging (i2cdetect/i2cget), the tmp117 IIO module
+# loaded at boot, and a oneshot unit that instantiates the device on the
+# configured bus since the board firmware knows nothing about it. Readout
+# is the tmp117.sh CLI; nothing logs continuously yet.
+
+- name: Install i2c-tools for bus debugging.
+  ansible.builtin.apt:
+    name: i2c-tools
+    state: present
+
+- name: Load the tmp117 IIO driver at boot.
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/tmp117.conf
+    content: "tmp117\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load the tmp117 IIO driver now.
+  community.general.modprobe:
+    name: tmp117
+    state: present
+
+- name: Install the tmp117-i2c instantiation unit.
+  ansible.builtin.template:
+    src: tmp117-i2c.service.j2
+    dest: /etc/systemd/system/tmp117-i2c.service
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    tmp117_sysfs_name: "{{ tmp117_i2c_bus }}-{{ '%04x' | format(tmp117_i2c_addr | int(base=16)) }}"
+  register: tmp117_unit
+
+# A changed unit means bus/address moved: restart so the new device is
+# created (the old one, if any, stays until reboot; remove it by hand with
+# the bus's delete_device file).
+- name: Enable and start tmp117-i2c.
+  ansible.builtin.systemd_service:
+    name: tmp117-i2c
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if tmp117_unit.changed else 'started' }}"
+
+- name: Deploy the tmp117.sh readout script.
+  ansible.builtin.copy:
+    src: tmp117.sh
+    dest: /usr/local/bin/tmp117.sh
+    owner: root
+    group: root
+    mode: "0755"
